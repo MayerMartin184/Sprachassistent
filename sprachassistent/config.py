@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # Audio
     audio_input_device: str | None = None  # Name (Teilstring) oder Nummer des Mikrofons; leer = Windows-Standard
+    audio_output_device: str | None = None  # Name (Teilstring) oder Nummer des Lautsprechers; leer = Windows-Standard
 
     # Wake-Word („Hey Jarvis“, lokal per openWakeWord)
     wake_word_enabled: bool = True
@@ -75,7 +76,7 @@ class Settings(BaseSettings):
             return Path(value).expanduser() if value.strip() else None
         return value
 
-    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", mode="before")
+    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

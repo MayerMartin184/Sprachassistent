@@ -60,7 +60,10 @@ class AzureSpeech:
             data=ssml.encode("utf-8"),
             timeout=60,
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            hint = {401: "Schlüssel ungültig", 403: "Schlüssel/Region passen nicht zusammen oder Kontingent erschöpft",
+                    400: "Stimme oder Sprache unbekannt (TTS_VOICE prüfen)", 429: "zu viele Anfragen"}.get(resp.status_code, "")
+            raise RuntimeError(f"HTTP {resp.status_code} {hint}: {resp.text[:200]}")
         return resp.content
 
 

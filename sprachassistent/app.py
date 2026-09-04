@@ -334,7 +334,9 @@ class App:
         answer = self.assistant.handle_text(text)
         self._post(self._log, self.name, answer)
         self._post(self._set_state, "speaking")
-        self.assistant.speak(answer)
+        error = self.assistant.speak(answer)
+        if error:
+            self._post(self._log, "System", error)
 
     def _done(self) -> None:
         self._busy = False

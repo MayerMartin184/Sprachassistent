@@ -49,7 +49,7 @@ class Api:
             return
         self._push("System", f"Funktionen: {self.assistant.capabilities}")
         if self.s.speech_enabled and self.s.wake_word_enabled:
-            from .audio.io import list_input_devices, resolve_input_device
+            from .audio.io import list_devices, list_input_devices, resolve_device, resolve_input_device
             from .audio.wakeword import WakeWordListener
 
             device = None
@@ -60,6 +60,13 @@ class Api:
                 lines = [f"Mikrofon: {chosen[1] if chosen else 'Windows-Standard'}", "Vorhandene Mikrofone (Nummer: Name):"]
                 lines += [f"   {i}: {n}{'  (Standard)' if d else ''}" for i, n, d in devices]
                 lines.append("Anderes Mikrofon wählen: AUDIO_INPUT_DEVICE=<Nummer oder Namensteil> in der .env.")
+                outputs = list_devices("output")
+                out_idx = resolve_device(self.s.audio_output_device, "output")
+                out = next((d for d in outputs if d[0] == out_idx), None) if out_idx is not None else next((d for d in outputs if d[2]), None)
+                lines.append(f"Lautsprecher: {out[1] if out else 'Windows-Standard'}")
+                lines.append("Vorhandene Lautsprecher (Nummer: Name):")
+                lines += [f"   {i}: {n}{'  (Standard)' if d else ''}" for i, n, d in outputs]
+                lines.append("Anderen Lautsprecher wählen: AUDIO_OUTPUT_DEVICE=<Nummer oder Namensteil> in der .env.")
                 self._push("System", "\n".join(lines))
             except Exception as exc:  # noqa: BLE001
                 self._push("System", f"Mikrofon-Auswahl: {exc} – Windows-Standard wird verwendet.")
@@ -174,7 +181,9 @@ class Api:
         answer = self.assistant.handle_text(text)
         self._push(self.s.assistant_name, answer)
         self._set_state("speaking")
-        self.assistant.speak(answer)
+        error = self.assistant.speak(answer)
+        if error:
+            self._push("System", error)
 
     def _process_audio(self, wav: bytes) -> None:
         assert self.assistant is not None
@@ -193,12 +202,12 @@ class Api:
         if state == "wake":
             self._set_state("wake")
             try:
-                from .audio.io import play_wav
+                from .audio.io import play_wav, resolve_device
                 from .audio.wakeword import beep_wav
 
-                play_wav(beep_wav())
-            except Exception:  # noqa: BLE001
-                log.debug("Bestätigungston fehlgeschlagen", exc_info=True)
+                play_wav(beep_wav(), resolve_device(self.s.audio_output_device, "output"))
+            except Exception as exc:  # noqa: BLE001
+                self._push("System", f"Bestätigungston fehlgeschlagen: {exc}")
         elif state in ("listening", "processing"):
             self._set_state(state)
         elif state.startswith("error:"):

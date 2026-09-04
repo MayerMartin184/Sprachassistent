@@ -54,41 +54,51 @@ def pcm_to_wav(pcm: bytes, samplerate: int = SAMPLE_RATE) -> bytes:
     return buf.getvalue()
 
 
-def play_wav(wav_bytes: bytes) -> None:
+def play_wav(wav_bytes: bytes, device: int | None = None) -> None:
     import numpy as np
     import sounddevice as sd
 
     with wave.open(io.BytesIO(wav_bytes)) as wf:
         rate = wf.getframerate()
         data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
-    sd.play(data, rate)
+    sd.play(data, rate, device=device)
     sd.wait()
 
 
-def list_input_devices() -> list[tuple[int, str, bool]]:
-    """(Index, Name, ist Standard) aller Eingabegeräte."""
+def list_devices(kind: str = "input") -> list[tuple[int, str, bool]]:
+    """(Index, Name, ist Standard) aller Ein- ("input") oder Ausgabegeräte ("output")."""
     import sounddevice as sd
 
-    default = sd.default.device[0] if isinstance(sd.default.device, (list, tuple)) else sd.default.device
+    pos = 0 if kind == "input" else 1
+    default = sd.default.device[pos] if isinstance(sd.default.device, (list, tuple)) else sd.default.device
+    key = "max_input_channels" if kind == "input" else "max_output_channels"
     devices = []
     for idx, dev in enumerate(sd.query_devices()):
-        if dev.get("max_input_channels", 0) > 0:
+        if dev.get(key, 0) > 0:
             devices.append((idx, dev["name"], idx == default))
     return devices
 
 
-def resolve_input_device(selector: str | None) -> int | None:
+def list_input_devices() -> list[tuple[int, str, bool]]:
+    return list_devices("input")
+
+
+def resolve_device(selector: str | None, kind: str = "input") -> int | None:
     """Wandelt Name (Teilstring, Groß-/Kleinschreibung egal) oder Nummer in einen Geräteindex um."""
     if not selector:
         return None
-    devices = list_input_devices()
+    devices = list_devices(kind)
     if selector.strip().isdigit():
         idx = int(selector)
         if any(d[0] == idx for d in devices):
             return idx
-        raise ValueError(f"Kein Eingabegerät mit Nummer {idx}")
+        raise ValueError(f"Kein {'Eingabe' if kind == 'input' else 'Ausgabe'}gerät mit Nummer {idx}")
     needle = selector.strip().lower()
     for idx, name, _ in devices:
         if needle in name.lower():
             return idx
-    raise ValueError(f"Kein Mikrofon mit '{selector}' im Namen gefunden")
+    raise ValueError(f"Kein {'Mikrofon' if kind == 'input' else 'Lautsprecher'} mit '{selector}' im Namen gefunden")
+
+
+def resolve_input_device(selector: str | None) -> int | None:
+    return resolve_device(selector, "input")

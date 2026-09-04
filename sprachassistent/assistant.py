@@ -76,12 +76,21 @@ class Assistant:
             raise RuntimeError("Spracherkennung nicht konfiguriert (AZURE_SPEECH_KEY/REGION fehlen).")
         return self.speech.transcribe(wav_bytes)
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str) -> str | None:
+        """Spricht den Text. Rückgabe: None bei Erfolg, sonst eine Fehlerbeschreibung für den Nutzer."""
         if self.speech is None or not text:
-            return
-        from .audio.io import play_wav
+            return None
+        from .audio.io import play_wav, resolve_device
 
         try:
-            play_wav(self.speech.synthesize(text))
-        except Exception:  # noqa: BLE001 - Sprachausgabe darf die Antwort nie blockieren
-            log.exception("Sprachausgabe fehlgeschlagen")
+            audio = self.speech.synthesize(text)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Sprachsynthese fehlgeschlagen")
+            return f"Sprachausgabe (Azure) fehlgeschlagen: {exc}"
+        try:
+            device = resolve_device(self.settings.audio_output_device, "output")
+            play_wav(audio, device)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Wiedergabe fehlgeschlagen")
+            return f"Wiedergabe fehlgeschlagen: {exc}. Lautsprecher mit AUDIO_OUTPUT_DEVICE in der .env wählen."
+        return None
