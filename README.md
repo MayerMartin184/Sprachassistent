@@ -88,13 +88,13 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 
 1. Entra ID (Azure AD) -> App-Registrierungen -> „Neue Registrierung“.
 2. Kontotypen: Firma -> „nur dieses Verzeichnis“ (dann `MS_TENANT_ID` = Tenant-ID); privat/gemischt -> `common`.
-3. Authentifizierung -> „Öffentliche Clientflows zulassen“ = **Ja** (Device-Code-Anmeldung).
+3. Authentifizierung -> „Plattform hinzufügen“ -> „Mobile Anwendungen und Desktopanwendungen“ -> `http://localhost` anhaken (Browser-Anmeldung).
 4. API-Berechtigungen (Microsoft Graph, delegiert): `User.Read`, `Mail.ReadWrite`, `Mail.Send`,
    `Calendars.ReadWrite`, `Tasks.ReadWrite`, `OnlineMeetings.Read`, `OnlineMeetingTranscript.Read.All`.
    Für `OnlineMeetingTranscript.Read.All` ist in Firmen-Tenants meist eine Administrator-Zustimmung nötig.
 5. Anwendungs-ID (Client) als `MS_CLIENT_ID` eintragen.
 
-Beim ersten Zugriff zeigt die App einen Code und eine URL. Nach der Anmeldung im Browser liegt das
+Beim ersten Zugriff öffnet sich der Browser zur Microsoft-Anmeldung (Ausweichweg: Gerätecode). Danach liegt das
 Token in `~/.sprachassistent/ms_token_cache.json`. Nach Änderung der Berechtigungen diese Datei löschen
 und neu anmelden.
 

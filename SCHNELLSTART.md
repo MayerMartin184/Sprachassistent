@@ -108,8 +108,9 @@ Er bekommt dadurch keine Passwörter; du erlaubst den Zugriff einmalig per Anmel
    - **„Anwendungs-ID (Client)“** kopieren -> `.env`: `MS_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
    - Bei Firmenkonto zusätzlich **„Verzeichnis-ID (Mandant)“** kopieren -> `.env`: `MS_TENANT_ID=...`
      Bei privatem Konto bleibt `MS_TENANT_ID=common`.
-5. Links **„Authentifizierung“** -> ganz unten **„Erweiterte Einstellungen“** -> **„Öffentliche Clientflows
-   zulassen“** auf **„Ja“** -> oben **„Speichern“**. (Ohne das schlägt die Anmeldung per Code fehl.)
+5. Links **„Authentifizierung“** -> Knopf **„Umleitungs-URI hinzufügen“** (bzw. „Plattform hinzufügen“) ->
+   **„Mobile Anwendungen und Desktopanwendungen“** wählen -> Haken bei **`http://localhost`** ->
+   **„Konfigurieren“**. Damit kann sich Jarvis über deinen normalen Browser anmelden.
 6. Links **„API-Berechtigungen“** -> **„Berechtigung hinzufügen“** -> **„Microsoft Graph“** ->
    **„Delegierte Berechtigungen“** -> im Suchfeld nacheinander suchen und jeweils anhaken:
    - `User.Read` (ist meist schon da)
@@ -125,10 +126,10 @@ Er bekommt dadurch keine Passwörter; du erlaubst den Zugriff einmalig per Anmel
    braucht fast immer die Zustimmung eines Administrators. Ohne Zustimmung funktionieren To Do, Mail und
    Kalender meist trotzdem, nur die Teams-Transkripte nicht.
 
-**Erste Anmeldung:** Beim ersten Auftrag an Jarvis, der Mail/To Do/Kalender betrifft, öffnet sich ein
-Fenster mit einem Text wie „Öffne https://microsoft.com/devicelogin und gib den Code ABCD-EFGH ein“.
-Das im Browser tun, mit deinem Microsoft-Konto anmelden, die Berechtigungen bestätigen. Danach merkt
-sich Jarvis die Anmeldung.
+**Erste Anmeldung:** Beim ersten Auftrag an Jarvis, der Mail/To Do/Kalender betrifft, öffnet sich dein
+Browser mit der Microsoft-Anmeldung. Konto wählen, Berechtigungen bestätigen, fertig. Danach merkt sich
+Jarvis die Anmeldung. Öffnet sich kein Browser, zeigt Jarvis stattdessen einen Code für
+https://microsoft.com/devicelogin an.
 
 ### 4e. Kontrolle: So sollte `.env` aussehen (Beispiel)
 

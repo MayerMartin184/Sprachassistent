@@ -33,6 +33,11 @@ SCOPES = [
     "OnlineMeetingTranscript.Read.All",
 ]
 MAIL_FIELDS = "id,subject,from,toRecipients,receivedDateTime,isRead,flag,bodyPreview,hasAttachments"
+_SUCCESS_HTML = (
+    "<html><body style='font-family:sans-serif;text-align:center;margin-top:15%'>"
+    "<h2>Anmeldung erfolgreich</h2><p>Du kannst dieses Fenster schließen und zu Jarvis zurückkehren.</p>"
+    "</body></html>"
+)
 
 Confirm = Callable[[str], bool]
 Notify = Callable[[str], None]
@@ -94,15 +99,29 @@ class GraphClient:
         if accounts:
             result = self._app.acquire_token_silent(SCOPES, account=accounts[0])
         if not result:
-            flow = self._app.initiate_device_flow(scopes=SCOPES)
-            if "user_code" not in flow:
-                raise RuntimeError(f"Device-Flow konnte nicht gestartet werden: {flow.get('error_description', flow)}")
-            self.notify(flow["message"])
-            result = self._app.acquire_token_by_device_flow(flow)
+            result = self._login()
         if "access_token" not in result:
             raise RuntimeError(f"Microsoft-Anmeldung fehlgeschlagen: {result.get('error_description', result)}")
         self._save_cache()
         return result["access_token"]
+
+    def _login(self) -> dict[str, Any]:
+        """Erst Anmeldung im Browser (Umleitung auf http://localhost), sonst Gerätecode als Ausweichweg."""
+        self.notify("Bitte im Browser bei Microsoft anmelden. Das Fenster öffnet sich gleich.")
+        try:
+            result = self._app.acquire_token_interactive(
+                SCOPES, prompt="select_account", timeout=300, success_template=_SUCCESS_HTML
+            )
+            if "access_token" in result:
+                return result
+            log.warning("Browser-Anmeldung fehlgeschlagen: %s", result.get("error_description"))
+        except Exception as exc:  # noqa: BLE001 - z. B. kein Browser oder Port belegt
+            log.warning("Browser-Anmeldung nicht möglich: %s", exc)
+        flow = self._app.initiate_device_flow(scopes=SCOPES)
+        if "user_code" not in flow:
+            raise RuntimeError(f"Anmeldung konnte nicht gestartet werden: {flow.get('error_description', flow)}")
+        self.notify(flow["message"])
+        return self._app.acquire_token_by_device_flow(flow)
 
     def request(
         self,
