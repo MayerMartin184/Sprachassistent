@@ -97,7 +97,6 @@
   <svg class="traces" width="100%" height="100%" preserveAspectRatio="none">
     <path d="M0 150 H120 V210"/><rect x="115" y="205" width="10" height="10"/>
     <path d="M60 250 V320 H150 V400"/><rect x="145" y="395" width="10" height="10"/><circle cx="60" cy="250" r="4"/>
-    <path d="M100% 130 H calc(100% - 130px)"/>
   </svg>
   <svg class="traces traces-right" width="100%" height="100%" style="transform:scaleX(-1)">
     <path d="M0 175 H140 V235"/><rect x="135" y="230" width="10" height="10"/>
@@ -138,6 +137,17 @@
   </form>
 </div>
 
+<div class="overlay" id="confirm">
+  <div class="dialog" style="width:min(560px,92vw)">
+    <h2>Bestätigung</h2>
+    <div class="text" id="confirm_text" style="font-size:14px;line-height:1.55;white-space:pre-wrap;color:var(--text);max-height:50vh;overflow:auto"></div>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn" id="confirm_no" type="button">Nein</button>
+      <button class="btn primary" id="confirm_yes" type="button">Ja, ausführen</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="overlay">
   <div class="dialog">
     <h2>Einstellungen</h2>
@@ -176,13 +186,14 @@ const ui = (() => {
   const $ = id => document.getElementById(id);
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const canvas = $("wave"), ctx = canvas.getContext("2d");
-  let state = "idle", level = 0, amp = 0.05, t = 0, name = "JARVIS";
+  let state = null, level = 0, amp = 0.05, t = 0, name = "JARVIS";
   const TEXT = {idle:"Bereit", listening:"Sag „Hey {n}“", wake:"Ich höre", processing:"Ich arbeite", speaking:"Ich spreche", loading:"Lade Wake-Word-Modell", attentive:"Ich bin noch da – sprich einfach weiter"};
 
   function resize(){ const r = canvas.getBoundingClientRect(); canvas.width = r.width * devicePixelRatio; canvas.height = r.height * devicePixelRatio; }
   addEventListener("resize", resize); resize();
 
   function target(){
+    if (!state) return 0.06;
     if (state === "wake") return 0.15 + 0.85 * level;
     if (state === "listening" || state === "attentive") return 0.06 + 0.4 * level;
     if (state === "speaking") return 0.35 + 0.45 * Math.abs(Math.sin(t*3.7) * Math.sin(t*1.3)) + (Math.random()-0.5)*0.08;
@@ -240,8 +251,30 @@ const ui = (() => {
     lines[0].c = css("--line"); lines[1].c = css("--accent"); lines[2].c = css("--primary");
   }
 
-  // Verbindung zu Python
-  const api = () => window.pywebview.api;
+  // Verbindung zum Backend (lokaler Server)
+  const call = async (name, body) => {
+    const r = await fetch("/api/" + name, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    if (!r.ok) throw new Error(name + " " + r.status);
+    return r.json();
+  };
+  const api = () => ({
+    send: text => call("send", {text}),
+    set_mic: on => call("set_mic", {on}),
+    open_settings: () => call("open_settings", {}),
+    get_settings: () => call("settings"),
+    save_settings: async v => (await call("settings", v)).message,
+    config: () => call("config"),
+    poll: () => call("poll"),
+    confirm: (id, ok) => call("confirm", {id, ok}),
+  });
+  let confirmShown = null;
+  function showConfirm(req){
+    if (!req) { if (confirmShown) { $("confirm").classList.remove("open"); confirmShown = null; } return; }
+    if (confirmShown === req.id) return;
+    confirmShown = req.id; $("confirm_text").textContent = req.message; $("confirm").classList.add("open");
+    $("confirm_yes").onclick = () => { api().confirm(req.id, true); $("confirm").classList.remove("open"); confirmShown = null; };
+    $("confirm_no").onclick = () => { api().confirm(req.id, false); $("confirm").classList.remove("open"); confirmShown = null; };
+  }
   $("form").addEventListener("submit", async e => {
     e.preventDefault(); const v = $("input").value.trim(); if (!v) return;
     $("input").value = ""; busy(true); await api().send(v);
@@ -289,12 +322,13 @@ const ui = (() => {
       r.messages.forEach(m => message(m.who, m.text));
       if (r.busy !== undefined) busy(r.busy);
       if (r.mic) mic(r.mic.enabled, r.mic.on);
+      showConfirm(r.confirm);
       $("meter").textContent = (r.score === null || r.score === undefined || r.threshold === undefined) ? "" :
         `PEGEL ${Math.round(r.level*100)}%  ·  ERKENNUNG ${r.score.toFixed(2)} / ${r.threshold.toFixed(2)}`;
     } catch (err) { /* Python noch nicht bereit */ }
     setTimeout(poll, document.hidden ? 1000 : 120);
   }
-  addEventListener("pywebviewready", async () => { brand(await api().config()); poll(); });
+  (async () => { try { brand(await api().config()); } catch (e) {} poll(); })();
   return {setState, message};
 })();
 </script>

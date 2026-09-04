@@ -29,7 +29,9 @@ To Do, Mail, Kalender und Teams.
 ```
 sprachassistent/
   __main__.py        Einstieg (Fenster / --cli)
-  webapp.py          Fenster mit Web-Ansicht (pywebview): Standard-Oberfläche
+  window.py          Fensterprozess (pywebview), startet das Backend als eigenen Prozess
+  server.py          Backend-Prozess: lokaler HTTP-Server für die Oberfläche
+  webapp.py          Backend-Logik: Zustand, Nachrichten, Einstellungen, proaktive Meldungen
   ui/index.html      Oberfläche in HTML/CSS/JS im Mayer-E-Concept-Design
   app.py             Klassisches Tkinter-Fenster (Ausweich, --tk)
 Installieren.bat     Windows: Einrichtung per Doppelklick + Desktop-Verknüpfung

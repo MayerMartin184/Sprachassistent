@@ -40,6 +40,20 @@ def run_cli() -> None:
             print(f"{settings.assistant_name}: {assistant.handle_text(text)}\n")
 
 
+def run_backend(port: int) -> None:
+    """Backend-Prozess (wird vom Fenster gestartet)."""
+    from .server import serve
+
+    settings = load_settings()
+    _log_to_file(settings.data_dir / "jarvis.log")
+    try:
+        check_required(settings)
+    except ConfigError as exc:
+        logging.error("%s", exc)
+        sys.exit(2)
+    serve(settings, port)
+
+
 def run_gui(use_tk: bool = False) -> None:
     import tkinter as tk
     from tkinter import messagebox
@@ -50,12 +64,12 @@ def run_gui(use_tk: bool = False) -> None:
         check_required(settings)
         if not use_tk:
             try:
-                from . import webapp
+                from . import window
             except ImportError:
-                webapp = None  # type: ignore[assignment]
+                window = None  # type: ignore[assignment]
                 logging.warning("pywebview nicht verfügbar – klassisches Fenster")
-            if webapp is not None:
-                webapp.run(settings)
+            if window is not None:
+                window.run(settings)
                 return
         from .app import App
 
@@ -84,13 +98,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="sprachassistent", description="Sprachgesteuerter Desktop-Assistent")
     parser.add_argument("--cli", action="store_true", help="Textmodus im Terminal statt Fenster")
     parser.add_argument("--tk", action="store_true", help="Klassisches Tkinter-Fenster statt Web-Ansicht")
+    parser.add_argument("--backend", action="store_true", help="Nur Backend-Prozess (intern, vom Fenster gestartet)")
+    parser.add_argument("--port", type=int, default=0, help="Port des Backends (intern)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Ausführliche Protokollierung")
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    if args.cli:
+    if args.backend:
+        run_backend(args.port)
+    elif args.cli:
         try:
             run_cli()
         except ConfigError as exc:

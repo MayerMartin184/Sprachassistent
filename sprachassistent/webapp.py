@@ -1,7 +1,8 @@
-"""Fenster mit eingebetteter Web-Ansicht (pywebview): HTML/CSS-Oberfläche im Mayer-E-Concept-Stil.
+"""Backend der Oberfläche: Zustand, Nachrichten, Einstellungen, proaktive Meldungen.
 
-Die Seite fragt Python alle 70 ms nach Zustand, Mikrofonpegel und neuen Nachrichten (poll) und ruft
-send/set_mic/open_settings auf. Bestätigungen laufen über den nativen Dialog des Fensters.
+Läuft als eigener Prozess (server.py) getrennt vom Fenster, damit lange Schritte (Kamera, Modelle, KI)
+das Fenster nie einfrieren. Die Seite fragt regelmäßig poll() ab; Bestätigungen werden als Frage in die
+Oberfläche gestellt und dort beantwortet.
 """
 
 from __future__ import annotations
@@ -12,11 +13,10 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-import webview
 
 from .assistant import Assistant
 from .config import Settings
@@ -26,12 +26,15 @@ UI_FILE = Path(__file__).with_name("ui") / "index.html"
 
 
 class Api:
-    """Von JavaScript aufrufbare Schnittstelle (window.pywebview.api)."""
+    """Von der Oberfläche aufrufbare Schnittstelle (über server.py als JSON-Endpunkte)."""
 
     def __init__(self, settings: Settings) -> None:
         self.s = settings
-        self.window: webview.Window | None = None
         self._lock = threading.Lock()
+        self._confirm_request: dict[str, str] | None = None
+        self._confirm_answers: dict[str, bool] = {}
+        self._confirm_event = threading.Event()
+        self.last_poll = time.time()
         self._messages: list[dict[str, str]] = []
         self._state = "idle"
         self._status: str | None = None
@@ -190,9 +193,11 @@ class Api:
             return {"state": self._state, "status": None, "level": 0, "messages": [], "busy": self._busy}
 
     def _poll(self) -> dict[str, Any]:
+        self.last_poll = time.time()
         with self._lock:
             messages, self._messages = self._messages, []
             status, self._status = self._status, None
+            confirm = dict(self._confirm_request) if self._confirm_request else None
         level = self.listener.level if self.listener is not None else 0.0
         return {
             "state": self._state,
@@ -203,7 +208,15 @@ class Api:
             "messages": messages,
             "busy": self._busy,
             "mic": {"enabled": self.listener is not None, "on": self._mic_on},
+            "confirm": confirm,
         }
+
+    def answer_confirm(self, request_id: str, ok: bool) -> None:
+        with self._lock:
+            if self._confirm_request and self._confirm_request["id"] == request_id:
+                self._confirm_answers[request_id] = bool(ok)
+                self._confirm_request = None
+        self._confirm_event.set()
 
     def send(self, text: str) -> None:
         text = (text or "").strip()
@@ -377,9 +390,27 @@ class Api:
             self._status = text.rstrip(" …")
 
     def _confirm(self, message: str) -> bool:
-        if self.window is None:
-            return False
-        return bool(self.window.create_confirmation_dialog("Bestätigung", message))
+        """Stellt die Frage in der Oberfläche und wartet (max. 3 Minuten) auf die Antwort."""
+        request_id = uuid.uuid4().hex
+        with self._lock:
+            self._confirm_request = {"id": request_id, "message": message}
+            self._confirm_event.clear()
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            self._confirm_event.wait(timeout=1)
+            with self._lock:
+                if request_id in self._confirm_answers:
+                    return self._confirm_answers.pop(request_id)
+        with self._lock:
+            if self._confirm_request and self._confirm_request["id"] == request_id:
+                self._confirm_request = None
+        return False
+
+    def shutdown(self) -> None:
+        if self.listener is not None:
+            self.listener.stop()
+        if self.presence is not None:
+            self.presence.stop()
 
     def _notify(self, message: str) -> None:
         self._push("System", message)
@@ -389,10 +420,13 @@ def _preload(settings: Settings):  # noqa: ANN202
     """Schwere Importe, Modelle und die Kamera vor dem Fenster laden – sonst blockiert der Start das Fenster
     („reagiert nicht“). Rückgabe: vorbereitete Präsenz-Überwachung oder None."""
     presence = None
-    import anthropic  # noqa: F401
-    import msal  # noqa: F401
-    import numpy  # noqa: F401
-    import sounddevice  # noqa: F401
+    import importlib
+
+    for name in ("anthropic", "msal", "numpy", "sounddevice"):
+        try:
+            importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001 - fehlende Audio-Bibliothek meldet später der Listener
+            log.warning("Vorladen von %s fehlgeschlagen: %s", name, exc)
 
     if settings.webcam_enabled:
         try:
@@ -421,29 +455,11 @@ def _preload(settings: Settings):  # noqa: ANN202
     return presence
 
 
-def run(settings: Settings) -> None:
+def create_backend(settings: Settings) -> Api:
+    """Bereitet das Backend vor (Importe, Modelle, Kamera) und liefert die Schnittstelle."""
     presence = _preload(settings)
     api = Api(settings)
     if presence is not None:
         presence.on_event = api._on_presence_event
         api.presence = presence
-    window = webview.create_window(
-        f"{settings.assistant_name} – {settings.brand_title}",
-        url=UI_FILE.as_uri(),
-        js_api=api,
-        width=1000,
-        height=760,
-        min_size=(760, 560),
-        background_color=settings.brand_bg,
-        text_select=True,
-    )
-    api.window = window
-
-    def on_closed() -> None:
-        if api.listener is not None:
-            api.listener.stop()
-        if api.presence is not None:
-            api.presence.stop()
-
-    window.events.closed += on_closed
-    webview.start(api.start, private_mode=False)
+    return api
