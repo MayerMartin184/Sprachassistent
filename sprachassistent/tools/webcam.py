@@ -24,7 +24,8 @@ def capture(index: int = 0, max_width: int = 1024) -> list[dict[str, Any]]:
     backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
     cap = cv2.VideoCapture(index, backend)
     if not cap.isOpened():
-        raise RuntimeError(f"Webcam {index} konnte nicht geöffnet werden.")
+        cap.release()
+        raise RuntimeError(f"Webcam {index} konnte nicht geöffnet werden. {probe_cameras()}")
     try:
         frame = None
         for _ in range(8):  # Belichtung einpendeln lassen
@@ -48,6 +49,26 @@ def capture(index: int = 0, max_width: int = 1024) -> list[dict[str, Any]]:
         },
         {"type": "text", "text": f"Webcam-Aufnahme vom {datetime.now():%d.%m.%Y %H:%M:%S}."},
     ]
+
+
+def probe_cameras(max_index: int = 6) -> str:
+    """Prüft, welche Kameranummern ein Bild liefern (für WEBCAM_INDEX in der .env)."""
+    import cv2
+
+    backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+    working = []
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i, backend)
+        try:
+            if cap.isOpened():
+                ok, _ = cap.read()
+                if ok:
+                    working.append(str(i))
+        finally:
+            cap.release()
+    if not working:
+        return "Keine funktionierende Kamera gefunden. Ist sie angeschlossen und in Windows für Desktop-Apps freigegeben?"
+    return "Funktionierende Kameranummern: " + ", ".join(working) + ". In der .env WEBCAM_INDEX=<Nummer> setzen."
 
 
 def build_tools(index: int = 0) -> list[Tool]:
