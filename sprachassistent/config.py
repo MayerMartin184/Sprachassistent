@@ -12,8 +12,9 @@ DATA_DIR = Path.home() / ".sprachassistent"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # .env.txt: Windows-Editor hängt beim Speichern gern ".txt" an
-        env_file=(".env", ".env.txt", str(DATA_DIR / ".env")),
+        # Reihenfolge = Priorität (spätere überschreiben frühere). .env.example wird mitgelesen, weil Nutzer ihre
+        # Schlüssel oft dort eintragen; .env.txt, weil der Windows-Editor gern ".txt" anhängt.
+        env_file=(".env.example", ".env", ".env.txt", str(DATA_DIR / ".env")),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -96,7 +97,7 @@ class Settings(BaseSettings):
 
     @staticmethod
     def env_file_in_use() -> Path | None:
-        for candidate in (Path(".env"), Path(".env.txt"), DATA_DIR / ".env"):
+        for candidate in (Path(".env"), Path(".env.txt"), DATA_DIR / ".env", Path(".env.example")):
             if candidate.exists():
                 return candidate.resolve()
         return None
