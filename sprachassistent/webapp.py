@@ -47,21 +47,9 @@ class Api:
     def start(self) -> None:
         """Wird nach dem Öffnen des Fensters im Hintergrund aufgerufen."""
         snapshot = None
-        if self.s.webcam_enabled and self.s.presence_enabled:
-            try:
-                from .tools.webcam import available
-
-                if available():
-                    from .presence import PresenceWatcher
-
-                    self.presence = PresenceWatcher(
-                        self.s.webcam_index, self._on_presence_event,
-                        absence_min=self.s.presence_absence_min, cooldown_min=self.s.presence_cooldown_min,
-                    )
-                    self.presence.start()
-                    snapshot = self.presence.snapshot_jpeg
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Präsenz nicht gestartet: %s", exc)
+        if self.presence is not None:
+            self.presence.start()
+            snapshot = self.presence.snapshot_jpeg
         try:
             self.assistant = Assistant(self.s, confirm=self._confirm, notify=self._notify, on_status=self._set_status, snapshot_provider=snapshot)
         except Exception as exc:  # noqa: BLE001
@@ -397,8 +385,10 @@ class Api:
         self._push("System", message)
 
 
-def _preload(settings: Settings) -> None:
-    """Schwere Importe und Modelle vor dem Fenster laden – sonst blockiert der Start das Fenster („reagiert nicht“)."""
+def _preload(settings: Settings):  # noqa: ANN202
+    """Schwere Importe, Modelle und die Kamera vor dem Fenster laden – sonst blockiert der Start das Fenster
+    („reagiert nicht“). Rückgabe: vorbereitete Präsenz-Überwachung oder None."""
+    presence = None
     import anthropic  # noqa: F401
     import msal  # noqa: F401
     import numpy  # noqa: F401
@@ -407,8 +397,20 @@ def _preload(settings: Settings) -> None:
     if settings.webcam_enabled:
         try:
             import cv2  # noqa: F401
+
+            if settings.presence_enabled:
+                from .presence import PresenceWatcher
+
+                watcher = PresenceWatcher(
+                    settings.webcam_index, lambda *_: None,
+                    absence_min=settings.presence_absence_min, cooldown_min=settings.presence_cooldown_min,
+                )
+                if watcher.open():
+                    presence = watcher
         except ImportError:
             pass
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Kamera nicht vorbereitet: %s", exc)
     if settings.speech_enabled and settings.wake_word_enabled:
         try:
             from .audio.wakeword import preload_models
@@ -416,11 +418,15 @@ def _preload(settings: Settings) -> None:
             preload_models(settings.wake_word_model)
         except Exception as exc:  # noqa: BLE001 - Fehler zeigt später der Listener im Verlauf
             log.warning("Wake-Word-Modelle nicht vorgeladen: %s", exc)
+    return presence
 
 
 def run(settings: Settings) -> None:
-    _preload(settings)
+    presence = _preload(settings)
     api = Api(settings)
+    if presence is not None:
+        presence.on_event = api._on_presence_event
+        api.presence = presence
     window = webview.create_window(
         f"{settings.assistant_name} – {settings.brand_title}",
         url=UI_FILE.as_uri(),

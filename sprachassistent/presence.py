@@ -82,8 +82,28 @@ class PresenceWatcher:
         self._lock = threading.Lock()
         self._last_frame = None
         self._thread: threading.Thread | None = None
+        self._cap = None
         self.faces = 0
         self.error: str | None = None
+
+    def open(self) -> bool:
+        """Kamera öffnen. Dauert bei manchen Webcams Sekunden und hält den Interpreter fest –
+        deshalb vor dem Öffnen des Fensters aufrufen."""
+        import sys
+
+        import cv2
+
+        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+        cap = cv2.VideoCapture(self.camera_index, backend)
+        if not cap.isOpened():
+            cap.release()
+            self.error = f"Kamera {self.camera_index} nicht verfügbar"
+            log.warning(self.error)
+            return False
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self._cap = cap
+        return True
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="presence", daemon=True)
@@ -106,16 +126,11 @@ class PresenceWatcher:
         return jpg.tobytes() if ok else None
 
     def _run(self) -> None:
-        import sys
-
         import cv2
 
-        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
-        cap = cv2.VideoCapture(self.camera_index, backend)
-        if not cap.isOpened():
-            self.error = f"Kamera {self.camera_index} nicht verfügbar"
-            log.warning(self.error)
+        if self._cap is None and not self.open():
             return
+        cap = self._cap
         cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         try:
             while not self._stop.is_set():
