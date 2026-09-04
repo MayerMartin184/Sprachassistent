@@ -285,14 +285,14 @@ const ui = (() => {
   async function poll(){
     try {
       const r = await api().poll();
-      level = r.level; if (r.state !== state || r.status) setState(r.state, r.status);
+      level = r.level ?? 0; if (r.state !== state || r.status) setState(r.state, r.status);
       r.messages.forEach(m => message(m.who, m.text));
       if (r.busy !== undefined) busy(r.busy);
       if (r.mic) mic(r.mic.enabled, r.mic.on);
-      $("meter").textContent = (r.score === null || r.score === undefined) ? "" :
+      $("meter").textContent = (r.score === null || r.score === undefined || r.threshold === undefined) ? "" :
         `PEGEL ${Math.round(r.level*100)}%  ·  ERKENNUNG ${r.score.toFixed(2)} / ${r.threshold.toFixed(2)}`;
     } catch (err) { /* Python noch nicht bereit */ }
-    setTimeout(poll, 70);
+    setTimeout(poll, document.hidden ? 1000 : 120);
   }
   addEventListener("pywebviewready", async () => { brand(await api().config()); poll(); });
   return {setState, message};

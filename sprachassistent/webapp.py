@@ -195,6 +195,13 @@ class Api:
         }
 
     def poll(self) -> dict[str, Any]:
+        try:
+            return self._poll()
+        except Exception as exc:  # noqa: BLE001 - die Oberfläche darf nie hängen bleiben
+            log.warning("poll: %s", exc)
+            return {"state": self._state, "status": None, "level": 0, "messages": [], "busy": self._busy}
+
+    def _poll(self) -> dict[str, Any]:
         with self._lock:
             messages, self._messages = self._messages, []
             status, self._status = self._status, None
@@ -390,7 +397,29 @@ class Api:
         self._push("System", message)
 
 
+def _preload(settings: Settings) -> None:
+    """Schwere Importe und Modelle vor dem Fenster laden – sonst blockiert der Start das Fenster („reagiert nicht“)."""
+    import anthropic  # noqa: F401
+    import msal  # noqa: F401
+    import numpy  # noqa: F401
+    import sounddevice  # noqa: F401
+
+    if settings.webcam_enabled:
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
+            pass
+    if settings.speech_enabled and settings.wake_word_enabled:
+        try:
+            from .audio.wakeword import preload_models
+
+            preload_models(settings.wake_word_model)
+        except Exception as exc:  # noqa: BLE001 - Fehler zeigt später der Listener im Verlauf
+            log.warning("Wake-Word-Modelle nicht vorgeladen: %s", exc)
+
+
 def run(settings: Settings) -> None:
+    _preload(settings)
     api = Api(settings)
     window = webview.create_window(
         f"{settings.assistant_name} – {settings.brand_title}",

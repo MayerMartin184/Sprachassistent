@@ -101,6 +101,25 @@ class UtteranceSegmenter:
         return [pcm_to_wav(b"".join(c), SAMPLE_RATE) for c in chunks]
 
 
+_MODEL_CACHE: dict[str, tuple] = {}
+
+
+def preload_models(model_name: str = "hey_jarvis") -> None:
+    """Lädt Wake-Word- und VAD-Modell einmalig (z. B. vor dem Öffnen des Fensters) und hält sie im Speicher."""
+    if model_name in _MODEL_CACHE:
+        return
+    import openwakeword
+    from openwakeword.model import Model
+    from openwakeword.vad import VAD
+
+    models_dir = Path(openwakeword.__file__).parent / "resources" / "models"
+    needed = ["melspectrogram.onnx", "embedding_model.onnx", "silero_vad.onnx", f"{model_name}_v0.1.onnx"]
+    if not all((models_dir / n).exists() for n in needed):
+        log.info("Lade Wake-Word-Modelle herunter …")
+        openwakeword.utils.download_models(model_names=[model_name])
+    _MODEL_CACHE[model_name] = (Model(wakeword_models=[model_name], inference_framework="onnx"), VAD())
+
+
 class WakeWordListener:
     """Hintergrund-Thread: hört dauerhaft zu, meldet Zustände und liefert fertige Äußerungen als WAV-Teilstücke."""
 
@@ -173,16 +192,10 @@ class WakeWordListener:
 
     # --- Schleife -------------------------------------------------------------
     def _load_models(self):  # noqa: ANN202
-        import openwakeword
-        from openwakeword.model import Model
-        from openwakeword.vad import VAD
-
-        models_dir = Path(openwakeword.__file__).parent / "resources" / "models"
-        needed = ["melspectrogram.onnx", "embedding_model.onnx", "silero_vad.onnx", f"{self.model_name}_v0.1.onnx"]
-        if not all((models_dir / n).exists() for n in needed):
-            log.info("Lade Wake-Word-Modelle herunter …")
-            openwakeword.utils.download_models(model_names=[self.model_name])
-        return Model(wakeword_models=[self.model_name], inference_framework="onnx"), VAD()
+        preload_models(self.model_name)
+        model, vad = _MODEL_CACHE[self.model_name]
+        model.reset()
+        return model, vad
 
     def _run(self) -> None:
         import numpy as np
