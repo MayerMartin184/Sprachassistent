@@ -242,7 +242,13 @@ const ui = (() => {
     const tx = document.createElement("div"); tx.className = "text"; tx.textContent = text;
     el.append(w, tx); $("log").append(el); $("log").scrollTop = $("log").scrollHeight;
   }
-  function busy(b){ $("send").disabled = b; $("input").disabled = b; if(!b) $("input").focus(); }
+  let wasBusy = false;
+  function busy(b){
+    $("send").disabled = b; $("input").disabled = b;
+    const dialogOpen = $("overlay").classList.contains("open") || $("confirm").classList.contains("open");
+    if (wasBusy && !b && !dialogOpen) $("input").focus();  // nur nach einer abgeschlossenen Antwort
+    wasBusy = b;
+  }
   function mic(enabled, on){ $("micwrap").classList.toggle("disabled", !enabled); $("mic").disabled = !enabled; $("mic").checked = on; }
   function brand(cfg){
     name = cfg.name.toUpperCase(); $("name").textContent = name; $("tagline").textContent = cfg.title; document.title = cfg.name;
