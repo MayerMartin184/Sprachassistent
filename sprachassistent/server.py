@@ -70,6 +70,9 @@ def make_handler(api: Api):  # noqa: ANN201
                 elif path == "/api/set_mic":
                     api.set_mic(bool(data.get("on")))
                     self._json({"ok": True})
+                elif path == "/api/set_ambient":
+                    api.set_ambient(bool(data.get("on")))
+                    self._json({"ok": True})
                 elif path == "/api/settings":
                     self._json({"message": api.save_settings(data)})
                 elif path == "/api/open_settings":

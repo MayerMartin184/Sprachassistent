@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     presence_cooldown_min: int = 10  # höchstens ein Kommentar pro so viele Minuten
     presence_absence_min: int = 10  # ab so vielen Minuten Abwesenheit gilt Zurückkommen als Ankunft
 
+    # Mithör-Modus (Gespräche im Raum mitschreiben und auswerten) – Standard aus
+    ambient_listening: bool = False
+    ambient_extract_minutes: int = 3  # so oft wird neuer Gesprächstext auf Aufgaben/Termine geprüft
+    ambient_review_idle_minutes: int = 5  # Gesprächspause, nach der eine Sitzung als beendet gilt
+    ambient_review_min_minutes: int = 8  # ab dieser Gesprächsdauer entsteht ein Review
+
     # Proaktive Hinweise
     calendar_lead_minutes: int = 10  # so viele Minuten vor einem Termin meldet sich Jarvis
 

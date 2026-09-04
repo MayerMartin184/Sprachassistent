@@ -72,6 +72,20 @@ class Assistant:
         else:
             self.features.append("nur Text")
 
+    def register_ambient(self, recorder) -> None:  # noqa: ANN001
+        """Werkzeug, mit dem der Agent das heutige Gesprächsprotokoll lesen kann."""
+        from .tools.base import Tool, schema
+
+        self.registry.register(Tool(
+            name="ambient_transcript",
+            description=(
+                "Liest das heutige Gesprächsprotokoll des Mithör-Modus (was der Nutzer heute in Gesprächen und Sitzungen "
+                "gesagt und zugesagt hat). Für Fragen wie „Was habe ich heute zugesagt?“ oder „Worum ging es im Gespräch mit X?“."
+            ),
+            input_schema=schema({"max_chars": {"type": "integer", "description": "Standard 20000"}}),
+            handler=lambda max_chars=20000: recorder.transcript_today(max_chars),
+        ))
+
     @property
     def capabilities(self) -> str:
         return ", ".join(self.features)

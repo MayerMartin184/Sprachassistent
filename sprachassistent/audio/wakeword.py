@@ -133,8 +133,11 @@ class WakeWordListener:
         end_silence_ms: int = 1500,
         vad_threshold: float = 0.5,
         attention_ms: int = 20000,
+        on_ambient: Callable[[list[bytes]], None] | None = None,
     ) -> None:
         self.on_utterance = on_utterance
+        self.on_ambient = on_ambient
+        self.ambient = False  # Mithör-Modus: Sprache im Raum ohne Wake-Word mitschneiden
         self.on_state = on_state
         self.model_name = model_name
         self.threshold = threshold
@@ -209,6 +212,8 @@ class WakeWordListener:
             return
 
         segment: UtteranceSegmenter | None = None
+        ambient_seg: UtteranceSegmenter | None = None
+        ambient_run = 0
         was_paused = False
         try:
             with sd.RawInputStream(
@@ -225,6 +230,7 @@ class WakeWordListener:
                     if self._paused.is_set():
                         was_paused = True
                         segment = None
+                        ambient_seg = None
                         continue
                     if was_paused:
                         was_paused = False
@@ -259,8 +265,29 @@ class WakeWordListener:
                             self.score, self._score_frames = score, 0
                         if score >= self.threshold:
                             model.reset()
+                            ambient_seg = None  # der Befehl gehört nicht ins Protokoll
                             self.on_state("wake")
                             segment = UtteranceSegmenter(vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms)
+                            continue
+                        if self.ambient and self.on_ambient is not None:
+                            prob = float(vad.predict(samples, frame_size=640))
+                            if ambient_seg is None:
+                                ambient_run = ambient_run + FRAME_MS if prob >= self.vad_threshold else 0
+                                if ambient_run >= 320:
+                                    ambient_seg = UtteranceSegmenter(
+                                        vad_threshold=self.vad_threshold, end_silence_ms=1200, max_ms=25000,
+                                        no_speech_ms=4000, discard_ms=0,
+                                    )
+                                    for _ in range(4):
+                                        ambient_seg.feed(frame, prob)
+                                    ambient_run = 0
+                            else:
+                                result = ambient_seg.feed(frame, prob)
+                                if result == "done":
+                                    self.on_ambient(ambient_seg.wavs())
+                                    ambient_seg = None
+                                elif result == "cancel":
+                                    ambient_seg = None
                         continue
 
                     speech_prob = float(vad.predict(samples, frame_size=640))

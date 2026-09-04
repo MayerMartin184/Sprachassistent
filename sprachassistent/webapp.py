@@ -43,6 +43,7 @@ class Api:
         self.listener = None
         self.assistant: Assistant | None = None
         self.presence = None
+        self.ambient = None
         self._announced_events: set[str] = set()
         self._announce_lock = threading.Lock()
 
@@ -60,6 +61,12 @@ class Api:
             self._push("System", f"Start fehlgeschlagen: {exc}")
             return
         self._push("System", f"Funktionen: {self.assistant.capabilities}" + (", Präsenz" if self.presence else ""))
+        if self.s.speech_enabled:
+            from .ambient import AmbientRecorder
+
+            self.ambient = AmbientRecorder(self.s, self.assistant, notify=self._push, announce=self._announce)
+            self.ambient.enabled = self.s.ambient_listening
+            self.assistant.register_ambient(self.ambient)
         threading.Thread(target=self._scheduler, name="scheduler", daemon=True).start()
         if self.s.speech_enabled and self.s.wake_word_enabled:
             self._start_listener()
@@ -85,7 +92,9 @@ class Api:
             model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold, device=device,
             end_silence_ms=self.s.speech_end_silence_ms, vad_threshold=self.s.vad_threshold,
             attention_ms=self.s.attention_seconds * 1000,
+            on_ambient=lambda wavs: self.ambient.submit(wavs) if self.ambient is not None else None,
         )
+        self.listener.ambient = self.s.ambient_listening
         self._state, self._status = "loading", None
         self.listener.start()
 
@@ -118,6 +127,7 @@ class Api:
             "tts_preset": s.tts_preset, "attention_seconds": s.attention_seconds,
             "presence_enabled": s.presence_enabled, "presence_cooldown_min": s.presence_cooldown_min,
             "presence_available": self.presence is not None,
+            "ambient_extract_minutes": s.ambient_extract_minutes,
             "languages": s.language_list,
             "audio_input_device": s.audio_input_device or "", "audio_output_device": s.audio_output_device or "",
             "wake_word_threshold": s.wake_word_threshold, "speech_end_silence_ms": s.speech_end_silence_ms,
@@ -136,6 +146,7 @@ class Api:
             "vad_threshold": ("VAD_THRESHOLD", float), "tts_preset": ("TTS_PRESET", str),
             "attention_seconds": ("ATTENTION_SECONDS", int), "speech_languages": ("SPEECH_LANGUAGES", str),
             "presence_enabled": ("PRESENCE_ENABLED", bool), "presence_cooldown_min": ("PRESENCE_COOLDOWN_MIN", int),
+            "ambient_extract_minutes": ("AMBIENT_EXTRACT_MINUTES", int),
         }
         env_values: dict[str, str] = {}
         for field, (env_key, cast) in mapping.items():
@@ -243,8 +254,23 @@ class Api:
             "messages": messages,
             "busy": self._busy,
             "mic": {"enabled": self.listener is not None, "on": self._mic_on},
+            "ambient": {"available": self.ambient is not None, "on": bool(self.ambient and self.ambient.enabled)},
             "confirm": confirm,
         }
+
+    def set_ambient(self, on: bool) -> None:
+        from .config import update_env_file
+
+        on = bool(on)
+        self.s.ambient_listening = on
+        if self.ambient is not None:
+            self.ambient.enabled = on
+        if self.listener is not None:
+            self.listener.ambient = on
+        env_path = self.s.env_file_in_use() or Path(".env").resolve()
+        update_env_file(Path(env_path), {"AMBIENT_LISTENING": "true" if on else "false"})
+        self._push("System", "Mithören eingeschaltet: Gespräche werden mitgeschrieben und auf Zusagen, Aufgaben und Termine geprüft."
+                   if on else "Mithören ausgeschaltet.")
 
     def answer_confirm(self, request_id: str, ok: bool) -> None:
         with self._lock:

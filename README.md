@@ -14,6 +14,7 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Gedächtnis**: merkt sich Absprachen, Gewohnheiten, Personen und Vorlieben dauerhaft und nutzt sie
 - **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen
 - **Präsenz**: erkennt lokal, wenn du zurückkommst oder dich wiederholt jemand unterbricht, und kommentiert gelegentlich
+- **Mithören** (Schalter im Fenster): Gespräche und Sitzungen still mitschreiben, Zusagen und Aufgaben automatisch in To Do, Termine als Erinnerung, Review nach der Sitzung als Datei
 - **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word
 - **Stimmen-Palette**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
 - **Mehrsprachig**: versteht Deutsch, Rumänisch und Englisch und antwortet in der gesprochenen Sprache
@@ -50,6 +51,7 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   tools/memory.py    Dauerhaftes Gedächtnis (JSON)
   tools/reminders.py Erinnerungen mit Zeit (JSON), Scheduler in webapp.py
   presence.py        Präsenz per Webcam (lokale Gesichtserkennung, Ereignisse)
+  ambient.py         Mithör-Modus: Protokoll, Extraktion, Sitzungs-Review
   tools/files.py     Dateiablage, begrenzt auf DOCUMENTS_ROOT
   tools/lists.py     Listen (lokal)
   tools/tasks.py     Aufgaben lokal (nur ohne Microsoft 365)

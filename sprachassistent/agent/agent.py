@@ -31,6 +31,7 @@ class Agent:
         on_status: StatusCallback | None = None,
         client: Any | None = None,
         memory_summary: Callable[[], str] | None = None,
+        system_text: str | None = None,
     ) -> None:
         self.settings = settings
         self.registry = registry
@@ -39,6 +40,7 @@ class Agent:
         self.history: list[dict[str, Any]] = []
         self.tz = ZoneInfo(settings.timezone)
         self.memory_summary = memory_summary or (lambda: "")
+        self.system_text = system_text
 
     # ------------------------------------------------------------------
     def reset(self) -> None:
@@ -47,7 +49,8 @@ class Agent:
     def _system(self) -> list[dict[str, Any]]:
         now = datetime.now(self.tz)
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
-        blocks = [{"type": "text", "text": system_prompt(self.settings.assistant_name), "cache_control": {"type": "ephemeral"}}]
+        text = self.system_text or system_prompt(self.settings.assistant_name)
+        blocks = [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
         memory = self.memory_summary()
         if memory:
             blocks.append({"type": "text", "text": memory})
