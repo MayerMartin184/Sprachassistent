@@ -7,7 +7,7 @@ from typing import Callable
 
 from .agent.agent import Agent
 from .config import Settings
-from .tools import computer, files, lists, m365, memory, reminders, tasks, webcam
+from .tools import computer, documents, files, lists, m365, memory, reminders, tasks, webcam
 from .tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class Assistant:
         roots.update(files.parse_roots(settings.file_roots))
         self.files = files.FileManager(roots, confirm)
         registry.register_all(files.build_tools(self.files))
+        registry.register_all(documents.build_tools(self.files))
         registry.register_all(computer.build_tools())
         self.memory = memory.Memory(settings.data_dir)
         registry.register_all(memory.build_tools(self.memory))
@@ -61,6 +62,7 @@ class Assistant:
 
         self.registry = registry
         self.agent = Agent(settings, registry, on_status, memory_summary=self.memory.summary)
+        self._register_ask_model()
 
         self.speech = None
         if settings.speech_enabled:
@@ -76,6 +78,28 @@ class Assistant:
             self.features.append(f"Sprache (Wake-Word „Hey {settings.assistant_name}“)" if settings.wake_word_enabled else "Sprache")
         else:
             self.features.append("nur Text")
+
+    def _register_ask_model(self) -> None:
+        from .agent.agent import MODELS
+        from .tools.base import Tool, schema
+
+        self.registry.register(Tool(
+            name="ask_model",
+            description=(
+                "Holt eine Zweitmeinung oder tiefe Analyse von einem anderen Claude-Modell ohne Werkzeuge, z. B. Opus 5 mit "
+                "hoher Denktiefe für schwierige Fach-, Rechen- oder Entscheidungsfragen. Die Frage vollständig und mit Kontext stellen."
+            ),
+            input_schema=schema(
+                {
+                    "model": {"type": "string", "enum": list(MODELS), "description": "Standard: claude-opus-5"},
+                    "question": {"type": "string"},
+                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "Standard: high"},
+                },
+                ["question"],
+            ),
+            handler=lambda question, model="claude-opus-5", effort="high": self.agent.ask(model, question, effort),
+        ))
+        self.features.append("Dokumente (Word, Excel, PowerPoint)")
 
     def register_ambient(self, recorder) -> None:  # noqa: ANN001
         """Werkzeug, mit dem der Agent das heutige Gesprächsprotokoll lesen kann."""

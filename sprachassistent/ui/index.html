@@ -155,6 +155,14 @@
 <div class="overlay" id="overlay">
   <div class="dialog">
     <h2>Einstellungen</h2>
+    <div class="field"><label>KI-Modell</label><select id="s_model"></select></div>
+    <div class="field"><label>Denktiefe</label><select id="s_effort">
+      <option value="low">niedrig – schnellste Antworten</option><option value="medium">mittel – ausgewogen (Standard)</option>
+      <option value="high">hoch – gründlicher</option><option value="xhigh">sehr hoch – anspruchsvolle Aufgaben</option><option value="max">maximal – wenn Richtigkeit alles ist</option>
+    </select></div>
+    <div class="hint">Opus 5 denkt am besten, Sonnet 5 antwortet schneller, Haiku 4.5 ist für einfache Aufgaben. Für schwere Fragen holt sich Jarvis von selbst eine Zweitmeinung bei Opus 5. Höhere Denktiefe kostet Zeit und Tokens.</div>
+    <div class="field"><label>Modell Mithören</label><select id="s_amodel"></select></div>
+    <div class="hint">Der stille Mithör-Helfer läuft oft; ein schnelleres Modell spart hier deutlich Kosten.</div>
     <div class="field"><label>Mikrofon</label><select id="s_in"></select></div>
     <div class="field"><label>Lautsprecher</label><select id="s_out"></select></div>
     <div class="field"><label>Stimme</label><select id="s_voice"></select></div>
@@ -314,6 +322,9 @@ const ui = (() => {
     fill($("s_in"), st.inputs, st.audio_input_device, true);
     fill($("s_out"), st.outputs, st.audio_output_device, true);
     fill($("s_voice"), st.voices, st.tts_preset, false); $("s_voice").value = st.tts_preset;
+    $("s_model").innerHTML = ""; st.models.forEach(m => $("s_model").append(new Option(m.name, m.id))); $("s_model").value = st.assistant_model;
+    $("s_effort").value = st.assistant_effort;
+    $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Hauptmodell", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
     [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
     $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
     $("s_amb").value = st.ambient_extract_minutes; showVal("s_amb","v_amb", v => "alle " + v + " min");
@@ -329,6 +340,7 @@ const ui = (() => {
   $("s_save").addEventListener("click", async () => {
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
     const msg = await api().save_settings({
+      assistant_model: $("s_model").value, assistant_effort: $("s_effort").value, ambient_model: $("s_amodel").value,
       audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,
       attention_seconds: parseInt($("s_att").value),
       presence_enabled: $("s_presence").checked, ambient_extract_minutes: parseInt($("s_amb").value), presence_cooldown_min: parseInt($("s_cool").value),

@@ -17,10 +17,34 @@ log = logging.getLogger(__name__)
 
 StatusCallback = Callable[[str], None]
 
-SERVER_TOOLS: list[dict[str, Any]] = [
-    {"type": "web_search_20260209", "name": "web_search", "max_uses": 8},
-    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8},
-]
+MODELS: dict[str, str] = {
+    "claude-opus-5": "Claude Opus 5 – höchste Qualität (Standard)",
+    "claude-sonnet-5": "Claude Sonnet 5 – schnell, sehr gut",
+    "claude-haiku-4-5": "Claude Haiku 4.5 – sehr schnell, einfache Aufgaben",
+}
+EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+
+
+def server_tools(model: str) -> list[dict[str, Any]]:
+    """Websuche/Web-Fetch passend zur Modellgeneration (Haiku 4.5 kennt nur die Basisvarianten)."""
+    if model.startswith("claude-haiku"):
+        return [
+            {"type": "web_search_20250305", "name": "web_search", "max_uses": 8},
+            {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 8},
+        ]
+    return [
+        {"type": "web_search_20260209", "name": "web_search", "max_uses": 8},
+        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8},
+    ]
+
+
+def request_extras(model: str, effort: str) -> dict[str, Any]:
+    """Modellabhängige Parameter: effort/adaptives Denken gibt es ab der 4.6-Generation, nicht auf Haiku 4.5."""
+    if model.startswith("claude-haiku"):
+        return {}
+    if effort not in EFFORTS:
+        effort = "medium"
+    return {"output_config": {"effort": effort}}
 
 
 class Agent:
@@ -32,6 +56,8 @@ class Agent:
         client: Any | None = None,
         memory_summary: Callable[[], str] | None = None,
         system_text: str | None = None,
+        model: str | None = None,
+        effort: str | None = None,
     ) -> None:
         self.settings = settings
         self.registry = registry
@@ -41,6 +67,16 @@ class Agent:
         self.tz = ZoneInfo(settings.timezone)
         self.memory_summary = memory_summary or (lambda: "")
         self.system_text = system_text
+        self.model_override = model
+        self.effort_override = effort
+
+    @property
+    def model(self) -> str:
+        return self.model_override or self.settings.assistant_model
+
+    @property
+    def effort(self) -> str:
+        return self.effort_override or self.settings.assistant_effort
 
     # ------------------------------------------------------------------
     def reset(self) -> None:
@@ -58,7 +94,7 @@ class Agent:
         return blocks
 
     def _tools(self) -> list[dict[str, Any]]:
-        return self.registry.definitions() + SERVER_TOOLS
+        return self.registry.definitions() + server_tools(self.model)
 
     def run(self, user_content: str | list[dict[str, Any]]) -> str:
         """Verarbeitet eine Nutzeräußerung (Text oder Inhaltsblöcke, z. B. mit Bild) bis zur endgültigen Antwort."""
@@ -89,12 +125,12 @@ class Agent:
         for _ in range(self.settings.max_tool_rounds):
             self.on_status("Denke nach …")
             response = self.client.messages.create(
-                model=self.settings.assistant_model,
+                model=self.model,
                 max_tokens=16000,
                 system=self._system(),
                 tools=self._tools(),
                 messages=self.history,
-                output_config={"effort": self.settings.assistant_effort},
+                **request_extras(self.model, self.effort),
             )
             self.history.append({"role": "assistant", "content": response.content})
 
@@ -121,6 +157,17 @@ class Agent:
 
         self.history.append({"role": "assistant", "content": "Abgebrochen: zu viele Arbeitsschritte."})
         return "Ich habe die Bearbeitung abgebrochen, weil zu viele Schritte nötig waren. Bitte den Auftrag kleiner fassen."
+
+    def ask(self, model: str, question: str, effort: str = "high") -> str:
+        """Einmalige Frage an ein (anderes) Modell ohne Werkzeuge – für Zweitmeinungen und schwere Denkaufgaben."""
+        response = self.client.messages.create(
+            model=model,
+            max_tokens=16000,
+            system=f"Du bist ein sorgfältiger Fachexperte. Antworte präzise und auf Deutsch. Aktuell: {datetime.now(self.tz):%d.%m.%Y %H:%M}.",
+            messages=[{"role": "user", "content": question}],
+            **request_extras(model, effort),
+        )
+        return self._text(response.content)
 
     @staticmethod
     def _text(content: list[Any]) -> str:

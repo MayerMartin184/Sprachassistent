@@ -109,6 +109,7 @@ class Api:
             outputs = [{"id": i, "name": n, "default": d} for i, n, d in list_devices("output")]
         except Exception as exc:  # noqa: BLE001
             log.warning("Geräteliste nicht verfügbar: %s", exc)
+        from .agent.agent import EFFORTS, MODELS
         from .speech.azure import VOICE_PRESETS
 
         s = self.s
@@ -128,6 +129,9 @@ class Api:
             "presence_enabled": s.presence_enabled, "presence_cooldown_min": s.presence_cooldown_min,
             "presence_available": self.presence is not None,
             "ambient_extract_minutes": s.ambient_extract_minutes,
+            "models": [{"id": k, "name": n} for k, n in MODELS.items()], "efforts": EFFORTS,
+            "assistant_model": s.assistant_model, "assistant_effort": s.assistant_effort,
+            "ambient_model": s.ambient_model or "",
             "languages": s.language_list,
             "audio_input_device": s.audio_input_device or "", "audio_output_device": s.audio_output_device or "",
             "wake_word_threshold": s.wake_word_threshold, "speech_end_silence_ms": s.speech_end_silence_ms,
@@ -147,6 +151,8 @@ class Api:
             "attention_seconds": ("ATTENTION_SECONDS", int), "speech_languages": ("SPEECH_LANGUAGES", str),
             "presence_enabled": ("PRESENCE_ENABLED", bool), "presence_cooldown_min": ("PRESENCE_COOLDOWN_MIN", int),
             "ambient_extract_minutes": ("AMBIENT_EXTRACT_MINUTES", int),
+            "assistant_model": ("ASSISTANT_MODEL", str), "assistant_effort": ("ASSISTANT_EFFORT", str),
+            "ambient_model": ("AMBIENT_MODEL", str),
         }
         env_values: dict[str, str] = {}
         for field, (env_key, cast) in mapping.items():

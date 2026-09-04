@@ -97,6 +97,7 @@ class AmbientRecorder:
         return Agent(
             self.s, self.assistant.registry, lambda _m: None,
             memory_summary=self.assistant.memory.summary, system_text=prompt.format(name=self.s.assistant_name),
+            model=self.s.ambient_model, effort="low",
         )
 
     def _ticker(self) -> None:

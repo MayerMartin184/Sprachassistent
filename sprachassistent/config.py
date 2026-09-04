@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None  # None -> SDK-Standardauflösung (ANTHROPIC_API_KEY, ant auth login)
     assistant_model: str = "claude-opus-5"
     assistant_effort: str = "medium"
+    ambient_model: str | None = None  # Modell für den stillen Mithör-Helfer; leer = wie assistant_model
     max_tool_rounds: int = 30
 
     # Azure Speech
@@ -93,7 +94,7 @@ class Settings(BaseSettings):
             return Path(value).expanduser() if value.strip() else None
         return value
 
-    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", mode="before")
+    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", "ambient_model", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

@@ -17,6 +17,8 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Mithören** (Schalter im Fenster): Gespräche und Sitzungen still mitschreiben, Zusagen und Aufgaben automatisch in To Do, Termine als Erinnerung, Review nach der Sitzung als Datei
 - **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word
 - **Stimmen-Palette**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
+- **Erstellen**: Word-Dokumente, Excel-Tabellen und PowerPoint-Präsentationen als fertige Dateien
+- **KI-Modelle**: Opus 5, Sonnet 5 oder Haiku 4.5 wählbar, Denktiefe einstellbar, Zweitmeinung per Werkzeug
 - **Mehrsprachig**: versteht Deutsch, Rumänisch und Englisch und antwortet in der gesprochenen Sprache
 
 Technik: Claude (Anthropic API) als Agent mit Werkzeugen und integrierter Websuche, openWakeWord
@@ -54,6 +56,7 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   ambient.py         Mithör-Modus: Protokoll, Extraktion, Sitzungs-Review
   tools/files.py     Dateien in freigegebenen Wurzelordnern (Dokumente, Downloads, Desktop, OneDrive, FILE_ROOTS)
   tools/computer.py  Programme starten, URL öffnen, Zwischenablage, Bildschirmfoto
+  tools/documents.py Word/Excel/PowerPoint erzeugen
   tools/lists.py     Listen (lokal)
   tools/tasks.py     Aufgaben lokal (nur ohne Microsoft 365)
 tests/               Unit-Tests ohne API-Aufrufe
