@@ -1,6 +1,6 @@
-"""Desktop-Fenster im futuristischen Stil: animierte Audio-Wellenlinien, Verlauf, Eingabe, Dialoge.
+"""Desktop-Fenster im Mayer-E-Concept-Stil: Raster, Leiterbahnen, animierte Audio-Wellenlinien, Verlauf, Eingabe.
 
-Farben, Schrift und Logo kommen aus den Einstellungen (BRAND_*), damit die Firmen-CI ohne Codeänderung passt.
+Farben und Schriften kommen aus den Einstellungen (BRAND_*), damit sich das Design ohne Codeänderung anpassen lässt.
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ STATE_TEXT = {
     "processing": "ICH ARBEITE",
     "speaking": "ICH SPRECHE",
 }
-WAVE_W, WAVE_H = 700, 150
+HERO_H = 300  # Höhe des oberen Bereichs (Kopf + Wellen + Status)
+GRID = 44
 
 
 def _mix(c1: str, c2: str, t: float) -> str:
@@ -37,6 +38,11 @@ def _mix(c1: str, c2: str, t: float) -> str:
     return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
 
 
+def _spaced(text: str) -> str:
+    """Tk kennt keine Laufweite; gesperrte Schrift wird über schmale Leerzeichen nachgebildet."""
+    return " ".join(text)
+
+
 class App:
     def __init__(self, settings: Settings) -> None:
         self.s = settings
@@ -44,8 +50,8 @@ class App:
         self.root = tk.Tk()
         self.root.title(f"{self.name} – {settings.brand_title}")
         self.root.configure(bg=settings.brand_bg)
-        self.root.geometry("900x680")
-        self.root.minsize(680, 520)
+        self.root.geometry("960x720")
+        self.root.minsize(720, 560)
         icon = Path(__file__).with_name("jarvis.ico")
         if icon.exists():
             try:
@@ -53,13 +59,16 @@ class App:
             except tk.TclError:
                 pass
 
-        self.font = settings.brand_font if settings.brand_font in tkfont.families() else "Segoe UI"
+        families = set(tkfont.families())
+        self.font = settings.brand_font if settings.brand_font in families else "Segoe UI"
+        self.mono = settings.brand_mono if settings.brand_mono in families else "Courier New"
         self._ui_queue: queue.Queue = queue.Queue()
         self._busy = False
         self._state = "idle"
         self._t = 0.0
-        self._amp = 0.05  # geglättete Amplitude 0..1
+        self._amp = 0.05
         self._logo_img = None
+        self._dots: list[int] = []
         self.listener = None
 
         self._build_widgets()
@@ -89,89 +98,132 @@ class App:
 
     # --- Aufbau -----------------------------------------------------------
     def _build_widgets(self) -> None:
-        s, f = self.s, self.font
-        head = tk.Frame(self.root, bg=s.brand_bg)
-        head.pack(fill="x", padx=28, pady=(18, 0))
-        if s.logo_path and Path(s.logo_path).exists():
-            try:
-                img = tk.PhotoImage(file=str(s.logo_path))
-                factor = max(1, math.ceil(img.height() / 44))
-                self._logo_img = img.subsample(factor, factor)
-                tk.Label(head, image=self._logo_img, bg=s.brand_bg).pack(side="left", padx=(0, 14))
-            except tk.TclError:
-                log.warning("Logo konnte nicht geladen werden: %s", s.logo_path)
-        title = tk.Frame(head, bg=s.brand_bg)
-        title.pack(side="left")
-        tk.Label(title, text=self.name.upper(), font=(f, 22, "bold"), bg=s.brand_bg, fg=s.brand_text).pack(anchor="w")
-        tk.Label(title, text=s.brand_title.upper(), font=(f, 8), bg=s.brand_bg, fg=s.brand_primary).pack(anchor="w")
+        s, f, m = self.s, self.font, self.mono
+
+        # Oberer Bereich: eine Zeichenfläche mit Raster, Leiterbahnen, Logo, Wellen, Status
+        self.hero = tk.Canvas(self.root, height=HERO_H, bg=s.brand_bg, highlightthickness=0)
+        self.hero.pack(fill="x")
+        self.hero.bind("<Configure>", lambda _e: self._draw_static())
 
         self.mic_var = tk.BooleanVar(value=True)
         self.mic_check = tk.Checkbutton(
-            head, text="MIKROFON", variable=self.mic_var, command=self._toggle_mic, font=(f, 8),
+            self.hero, text=_spaced("MIKROFON"), variable=self.mic_var, command=self._toggle_mic, font=(m, 8),
             bg=s.brand_bg, fg=s.brand_muted, activebackground=s.brand_bg, activeforeground=s.brand_text,
             selectcolor=s.brand_panel, bd=0, highlightthickness=0,
         )
-        self.mic_check.pack(side="right")
-        tk.Button(
-            head, text="EINSTELLUNGEN", command=self._open_settings, font=(f, 8), bg=s.brand_bg, fg=s.brand_muted,
-            activebackground=s.brand_bg, activeforeground=s.brand_text, relief="flat", bd=0, cursor="hand2",
-        ).pack(side="right", padx=(0, 16))
+        self.settings_btn = tk.Button(
+            self.hero, text=_spaced("EINSTELLUNGEN"), command=self._open_settings, font=(m, 8), bg=s.brand_bg,
+            fg=s.brand_muted, activebackground=s.brand_bg, activeforeground=s.brand_text, relief="flat", bd=0,
+            cursor="hand2", highlightthickness=0,
+        )
+        self.status_var = tk.StringVar(value=_spaced("STARTE"))
 
-        # Wellen-Visualisierung
-        self.canvas = tk.Canvas(self.root, width=WAVE_W, height=WAVE_H, bg=s.brand_bg, highlightthickness=0)
-        self.canvas.pack(pady=(10, 0))
-        mid = WAVE_H / 2
-        self.canvas.create_line(0, mid, WAVE_W, mid, fill=_mix(s.brand_bg, s.brand_primary, 0.15), width=1)
-        self._lines = []
-        for spec in self._line_specs():
-            self._lines.append(self.canvas.create_line(0, mid, WAVE_W, mid, fill=spec["color"], width=spec["width"], smooth=True))
-        self.status_var = tk.StringVar(value="STARTE")
-        tk.Label(self.root, textvariable=self.status_var, font=(f, 10, "bold"), bg=s.brand_bg, fg=s.brand_primary).pack(pady=(2, 10))
-        tk.Frame(self.root, bg=_mix(s.brand_bg, s.brand_primary, 0.35), height=1).pack(fill="x", padx=28)
+        # Trennlinie
+        tk.Frame(self.root, bg=s.brand_line, height=1).pack(fill="x", padx=36)
 
         # Eingabe unten (zuerst packen, damit sie immer sichtbar bleibt)
         row = tk.Frame(self.root, bg=s.brand_bg)
-        row.pack(side="bottom", fill="x", padx=28, pady=(0, 18))
+        row.pack(side="bottom", fill="x", padx=36, pady=(0, 22))
+        box = tk.Frame(row, bg=s.brand_line, padx=1, pady=1)
+        box.pack(side="left", fill="x", expand=True)
         self.entry = tk.Entry(
-            row, font=(f, 12), bg=s.brand_panel, fg=s.brand_text, insertbackground=s.brand_primary, relief="flat",
-            highlightthickness=1, highlightbackground=_mix(s.brand_panel, s.brand_primary, 0.35), highlightcolor=s.brand_primary,
+            box, font=(f, 12), bg=s.brand_panel, fg=s.brand_text, insertbackground=s.brand_primary, relief="flat",
+            highlightthickness=0, bd=0,
         )
-        self.entry.pack(side="left", fill="x", expand=True, ipady=9)
+        self.entry.pack(fill="x", ipady=10, padx=12)
         self.entry.bind("<Return>", lambda _e: self._send_text())
+        self.entry.bind("<FocusIn>", lambda _e: box.configure(bg=s.brand_primary))
+        self.entry.bind("<FocusOut>", lambda _e: box.configure(bg=s.brand_line))
         tk.Button(
-            row, text="SENDEN", command=self._send_text, font=(f, 10, "bold"), bg=s.brand_primary, fg=s.brand_bg,
-            activebackground=s.brand_accent, activeforeground=s.brand_text, relief="flat", padx=18, bd=0,
-        ).pack(side="left", padx=(10, 0), ipady=7)
+            row, text=_spaced("SENDEN") + "  →", command=self._send_text, font=(m, 10, "bold"), bg=s.brand_primary,
+            fg=s.brand_bg, activebackground=s.brand_accent, activeforeground=s.brand_bg, relief="flat", padx=22, bd=0,
+            cursor="hand2",
+        ).pack(side="left", padx=(12, 0), ipady=9)
 
         # Verlauf
         frame = tk.Frame(self.root, bg=s.brand_bg)
-        frame.pack(side="top", fill="both", expand=True, padx=28, pady=(12, 12))
+        frame.pack(side="top", fill="both", expand=True, padx=36, pady=(16, 16))
         self.transcript = tk.Text(
             frame, wrap="word", state="disabled", font=(f, 11), bg=s.brand_bg, fg=s.brand_text, height=6,
-            relief="flat", padx=4, pady=4, spacing1=4, spacing3=10, highlightthickness=0, bd=0, cursor="arrow",
+            relief="flat", padx=2, pady=2, spacing1=2, spacing3=12, highlightthickness=0, bd=0, cursor="arrow",
         )
-        scroll = tk.Scrollbar(frame, command=self.transcript.yview, bg=s.brand_panel, troughcolor=s.brand_bg, bd=0)
+        scroll = tk.Scrollbar(frame, command=self.transcript.yview, bg=s.brand_panel, troughcolor=s.brand_bg, bd=0, width=8)
         self.transcript.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         self.transcript.pack(side="left", fill="both", expand=True)
-        self.transcript.tag_config("Du", foreground=s.brand_accent, font=(f, 9, "bold"), spacing1=8)
-        self.transcript.tag_config(self.name, foreground=s.brand_primary, font=(f, 9, "bold"), spacing1=8)
-        self.transcript.tag_config("System", foreground=s.brand_muted, font=(f, 9, "bold"), spacing1=8)
+        self.transcript.tag_config("Du", foreground=s.brand_primary, font=(m, 8, "bold"), spacing1=10)
+        self.transcript.tag_config(self.name, foreground=s.brand_primary, font=(m, 8, "bold"), spacing1=10)
+        self.transcript.tag_config("System", foreground=s.brand_muted, font=(m, 8, "bold"), spacing1=10)
         self.transcript.tag_config("body", foreground=s.brand_text, font=(f, 11), lmargin1=2, lmargin2=2)
         self.transcript.tag_config("body_system", foreground=s.brand_muted, font=(f, 10), lmargin1=2, lmargin2=2)
         self.entry.focus_set()
 
+    def _draw_static(self) -> None:
+        """Zeichnet Raster, Leiterbahnen, Logo, Titel; wird bei Größenänderung neu aufgebaut."""
+        c, s = self.hero, self.s
+        w = max(c.winfo_width(), 400)
+        c.delete("all")
+        self._dots = []
+
+        for x in range(0, w, GRID):
+            c.create_line(x, 0, x, HERO_H, fill=s.brand_grid)
+        for y in range(0, HERO_H, GRID):
+            c.create_line(0, y, w, y, fill=s.brand_grid)
+
+        # Leiterbahnen links und rechts, wie auf der Website
+        def trace(points: list[tuple[float, float]]) -> None:
+            flat = [v for pt in points for v in pt]
+            c.create_line(*flat, fill=s.brand_line, width=1.5)
+            x, y = points[-1]
+            c.create_rectangle(x - 3, y - 3, x + 3, y + 3, outline=s.brand_line, fill=s.brand_bg)
+            x0, y0 = points[0]
+            self._dots.append(c.create_oval(x0 - 3, y0 - 3, x0 + 3, y0 + 3, fill=s.brand_primary, outline=""))
+
+        trace([(40, 120), (40, 180), (120, 180), (120, 250)])
+        trace([(0, 70), (90, 70), (90, 110)])
+        trace([(w - 40, 130), (w - 40, 200), (w - 130, 200), (w - 130, 260)])
+        trace([(w, 80), (w - 100, 80), (w - 100, 110)])
+
+        # Logo: PNG oder gezeichnete Raute mit Blitz
+        if s.logo_path and Path(s.logo_path).exists():
+            try:
+                img = tk.PhotoImage(file=str(s.logo_path))
+                factor = max(1, math.ceil(img.height() / 48))
+                self._logo_img = img.subsample(factor, factor)
+                c.create_image(36, 46, image=self._logo_img, anchor="w")
+            except tk.TclError:
+                log.warning("Logo konnte nicht geladen werden: %s", s.logo_path)
+        else:
+            cx, cy, r = 58, 50, 22
+            c.create_polygon(cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy, outline=s.brand_primary, fill=s.brand_panel, width=2)
+            c.create_line(cx + 6, cy - 11, cx - 5, cy + 1, cx + 3, cy + 1, cx - 6, cy + 12, fill=s.brand_primary, width=3, joinstyle="miter")
+
+        c.create_text(96, 38, text=_spaced(self.name.upper()), anchor="w", fill=s.brand_text, font=(self.font, 20, "bold"))
+        c.create_text(96, 64, text=_spaced(s.brand_title.upper()), anchor="w", fill=s.brand_primary, font=(self.mono, 8))
+        c.create_window(w - 36, 46, window=self.mic_check, anchor="e")
+        c.create_window(w - 150, 46, window=self.settings_btn, anchor="e")
+
+        # Wellen: Mittellinie und drei Linien
+        self._wave_x0, self._wave_x1, self._wave_mid = 120, w - 120, 178
+        c.create_line(self._wave_x0, self._wave_mid, self._wave_x1, self._wave_mid, fill=s.brand_line, dash=(2, 6))
+        self._lines = [
+            c.create_line(0, 0, 0, 0, fill=spec["color"], width=spec["width"], smooth=True) for spec in self._line_specs()
+        ]
+        # Status mit Strich davor, wie „—— ELECTRICAL ENGINEERING“
+        c.create_line(w / 2 - 150, 262, w / 2 - 118, 262, fill=s.brand_primary)
+        c.create_text(w / 2 - 108, 262, textvariable=self.status_var, anchor="w", fill=s.brand_primary, font=(self.mono, 9, "bold"))
+
     def _line_specs(self) -> list[dict]:
         s = self.s
         return [
-            {"color": _mix(s.brand_bg, s.brand_accent, 0.55), "width": 1.5, "freq": 1.6, "speed": 1.1, "phase": 2.1, "gain": 0.7},
-            {"color": _mix(s.brand_bg, s.brand_primary, 0.6), "width": 2, "freq": 2.3, "speed": 1.7, "phase": 0.7, "gain": 0.85},
+            {"color": _mix(s.brand_bg, s.brand_accent, 0.5), "width": 1.5, "freq": 1.6, "speed": 1.1, "phase": 2.1, "gain": 0.7},
+            {"color": s.brand_accent, "width": 2, "freq": 2.3, "speed": 1.7, "phase": 0.7, "gain": 0.85},
             {"color": s.brand_primary, "width": 2.5, "freq": 3.1, "speed": 2.3, "phase": 0.0, "gain": 1.0},
         ]
 
     # --- Animation --------------------------------------------------------
     def _target_amp(self) -> float:
-        if self._state in ("wake",) and self.listener is not None:
+        if self._state == "wake" and self.listener is not None:
             return 0.15 + 0.85 * self.listener.level
         if self._state == "listening" and self.listener is not None:
             return 0.06 + 0.35 * self.listener.level
@@ -183,25 +235,33 @@ class App:
 
     def _animate(self) -> None:
         self._t += 0.03
+        if not hasattr(self, "_lines"):
+            self.root.after(30, self._animate)
+            return
         target = max(0.02, min(1.0, self._target_amp()))
         self._amp += (target - self._amp) * (0.35 if target > self._amp else 0.12)
-        mid, n = WAVE_H / 2, 90
+        x0, x1, mid = self._wave_x0, self._wave_x1, self._wave_mid
+        width, height, n = x1 - x0, 60, 90
         for item, spec in zip(self._lines, self._line_specs()):
             pts = []
             for i in range(n + 1):
                 x = i / n
-                env = math.sin(math.pi * x) ** 1.5  # Ränder auslaufen lassen
+                env = math.sin(math.pi * x) ** 1.5
                 y = math.sin(x * spec["freq"] * 2 * math.pi + self._t * spec["speed"] * 2 + spec["phase"])
                 y *= 0.55 + 0.45 * math.sin(x * 7 + self._t * 0.9 + spec["phase"])
-                pts += [x * WAVE_W, mid + y * env * self._amp * spec["gain"] * (WAVE_H / 2 - 6)]
-            self.canvas.coords(item, *pts)
-        color = {"idle": self.s.brand_muted, "wake": self.s.brand_accent}.get(self._state, self.s.brand_primary)
-        self.canvas.itemconfig(self._lines[-1], fill=color)
+                pts += [x0 + x * width, mid + y * env * self._amp * spec["gain"] * height]
+            self.hero.coords(item, *pts)
+        color = {"idle": self.s.brand_muted, "wake": self.s.brand_text}.get(self._state, self.s.brand_primary)
+        self.hero.itemconfig(self._lines[-1], fill=color)
+        # Leuchtpunkte der Leiterbahnen pulsieren leicht
+        glow = _mix(self.s.brand_accent, self.s.brand_primary, (math.sin(self._t * 2) + 1) / 2)
+        for dot in self._dots:
+            self.hero.itemconfig(dot, fill=glow)
         self.root.after(30, self._animate)
 
     def _set_state(self, state: str) -> None:
         self._state = state
-        self.status_var.set(STATE_TEXT[state].format(name=self.name.upper()))
+        self.status_var.set(_spaced(STATE_TEXT[state].format(name=self.name.upper())))
 
     # --- Wake-Word --------------------------------------------------------
     def _start_listener(self) -> None:
@@ -211,7 +271,7 @@ class App:
             on_utterance=self._on_utterance, on_state=self._on_listener_state,
             model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold,
         )
-        self.status_var.set("LADE WAKE-WORD-MODELL")
+        self.status_var.set(_spaced("LADE WAKE-WORD-MODELL"))
         self.listener.start()
 
     def _on_listener_state(self, state: str) -> None:
@@ -304,7 +364,7 @@ class App:
         self.root.after(100, self._drain_queue)
 
     def _status(self, text: str) -> None:
-        text = text.upper().rstrip(" …")
+        text = _spaced(text.upper().rstrip(" …"))
         if threading.current_thread() is threading.main_thread():
             self.status_var.set(text)
         else:
@@ -312,7 +372,7 @@ class App:
 
     def _log(self, who: str, text: str) -> None:
         self.transcript.config(state="normal")
-        self.transcript.insert("end", f"{who.upper()}\n", who)
+        self.transcript.insert("end", f"{_spaced(who.upper())}\n", who)
         self.transcript.insert("end", text.strip() + "\n", "body_system" if who == "System" else "body")
         self.transcript.config(state="disabled")
         self.transcript.see("end")

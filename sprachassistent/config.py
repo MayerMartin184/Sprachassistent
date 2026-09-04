@@ -40,16 +40,19 @@ class Settings(BaseSettings):
     wake_word_threshold: float = 0.5
     assistant_name: str = "Jarvis"
 
-    # Design (Hex-Farben; an die Firmen-CI anpassen)
-    brand_bg: str = "#070b12"
-    brand_panel: str = "#0e1523"
-    brand_primary: str = "#19c6ff"
-    brand_accent: str = "#7b5cff"
-    brand_text: str = "#e8f1ff"
-    brand_muted: str = "#6f7f99"
+    # Design (Hex-Farben; Standard = Mayer E-Concept: dunkles Petrol, Raster, hellcyanfarbene Akzente)
+    brand_bg: str = "#0c171b"
+    brand_panel: str = "#122126"
+    brand_grid: str = "#16262c"
+    brand_line: str = "#2f5a63"
+    brand_primary: str = "#a7e3ea"
+    brand_accent: str = "#5fb3bf"
+    brand_text: str = "#f2f7f8"
+    brand_muted: str = "#8fa4ab"
     brand_font: str = "Segoe UI"
-    brand_title: str = "ME-Concept Assistant"
-    logo_path: Path | None = None  # PNG, wird oben links angezeigt
+    brand_mono: str = "Consolas"
+    brand_title: str = "Mayer E-Concept · Assistant"
+    logo_path: Path | None = None  # PNG, wird oben links angezeigt (sonst gezeichnetes Rautenzeichen)
 
     # Webcam
     webcam_enabled: bool = True
