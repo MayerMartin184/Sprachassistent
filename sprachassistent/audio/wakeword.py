@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+from pathlib import Path
 from typing import Callable
 
 from .io import SAMPLE_RATE, pcm_to_wav
@@ -90,6 +91,9 @@ class WakeWordListener:
         self._thread: threading.Thread | None = None
         self._noise = 200.0
         self.level = 0.0  # 0..1, aktueller Mikrofonpegel für die Visualisierung
+        self.score = 0.0  # höchster Wake-Word-Wert der letzten ~2 s (Diagnose/Feinjustierung)
+        self.device_name = ""
+        self._score_frames = 0
 
     # --- Steuerung ------------------------------------------------------------
     def start(self) -> None:
@@ -117,10 +121,11 @@ class WakeWordListener:
         import openwakeword
         from openwakeword.model import Model
 
-        try:
+        models_dir = Path(openwakeword.__file__).parent / "resources" / "models"
+        needed = ["melspectrogram.onnx", "embedding_model.onnx", f"{self.model_name}_v0.1.onnx"]
+        if not all((models_dir / n).exists() for n in needed):
+            log.info("Lade Wake-Word-Modelle herunter …")
             openwakeword.utils.download_models(model_names=[self.model_name])
-        except Exception as exc:  # noqa: BLE001 - offline: vorhandene Modelle weiterverwenden
-            log.warning("Wake-Word-Modelle konnten nicht geladen/aktualisiert werden: %s", exc)
         return Model(wakeword_models=[self.model_name], inference_framework="onnx")
 
     def _run(self) -> None:
@@ -140,6 +145,10 @@ class WakeWordListener:
             with sd.RawInputStream(
                 samplerate=SAMPLE_RATE, blocksize=FRAME_SAMPLES, channels=1, dtype="int16", device=self.device
             ) as stream:
+                try:
+                    self.device_name = sd.query_devices(stream.device)["name"]
+                except Exception:  # noqa: BLE001
+                    self.device_name = str(stream.device)
                 self.on_state("listening")
                 while not self._stop.is_set():
                     data, _overflow = stream.read(FRAME_SAMPLES)
@@ -157,7 +166,10 @@ class WakeWordListener:
 
                     if segment is None:
                         self._noise = 0.97 * self._noise + 0.03 * level
-                        score = model.predict(np.frombuffer(frame, dtype=np.int16))[self.model_name]
+                        score = float(model.predict(np.frombuffer(frame, dtype=np.int16))[self.model_name])
+                        self._score_frames += 1
+                        if score >= self.score or self._score_frames >= 25:  # ~2 s Haltezeit
+                            self.score, self._score_frames = score, 0
                         if score >= self.threshold:
                             model.reset()
                             self.on_state("wake")

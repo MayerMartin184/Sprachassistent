@@ -49,11 +49,24 @@ class Api:
             return
         self._push("System", f"Funktionen: {self.assistant.capabilities}")
         if self.s.speech_enabled and self.s.wake_word_enabled:
+            from .audio.io import list_input_devices, resolve_input_device
             from .audio.wakeword import WakeWordListener
+
+            device = None
+            try:
+                devices = list_input_devices()
+                device = resolve_input_device(self.s.audio_input_device)
+                chosen = next((d for d in devices if d[0] == device), None) if device is not None else next((d for d in devices if d[2]), None)
+                lines = [f"Mikrofon: {chosen[1] if chosen else 'Windows-Standard'}", "Vorhandene Mikrofone (Nummer: Name):"]
+                lines += [f"   {i}: {n}{'  (Standard)' if d else ''}" for i, n, d in devices]
+                lines.append("Anderes Mikrofon wählen: AUDIO_INPUT_DEVICE=<Nummer oder Namensteil> in der .env.")
+                self._push("System", "\n".join(lines))
+            except Exception as exc:  # noqa: BLE001
+                self._push("System", f"Mikrofon-Auswahl: {exc} – Windows-Standard wird verwendet.")
 
             self.listener = WakeWordListener(
                 on_utterance=self._on_utterance, on_state=self._on_listener_state,
-                model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold,
+                model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold, device=device,
             )
             self._state, self._status = "loading", None
             self.listener.start()
@@ -92,6 +105,8 @@ class Api:
             "state": self._state,
             "status": status,
             "level": round(level, 3),
+            "score": round(self.listener.score, 2) if self.listener is not None else None,
+            "threshold": self.s.wake_word_threshold,
             "messages": messages,
             "busy": self._busy,
             "mic": {"enabled": self.listener is not None, "on": self._mic_on},

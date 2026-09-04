@@ -50,6 +50,7 @@
   canvas#wave{display:block;width:100%;height:170px}
   .status{display:flex;align-items:center;justify-content:center;gap:14px;font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--primary);text-transform:uppercase;padding:2px 0 16px}
   .status::before{content:"";width:34px;height:1px;background:var(--primary)}
+  .meter{font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--muted);text-align:center;margin-top:-10px;padding-bottom:10px;min-height:14px}
   .divider{height:1px;background:linear-gradient(90deg,transparent,var(--line) 15%,var(--line) 85%,transparent)}
   /* Verlauf */
   .log{position:relative;z-index:1;overflow-y:auto;padding:18px 6px 10px;scrollbar-width:thin;scrollbar-color:var(--line) transparent;user-select:text}
@@ -105,6 +106,7 @@
   <section class="stage">
     <canvas id="wave"></canvas>
     <div class="status" id="status">STARTE</div>
+    <div class="meter" id="meter"></div>
     <div class="divider"></div>
   </section>
 
@@ -200,6 +202,8 @@ const ui = (() => {
       r.messages.forEach(m => message(m.who, m.text));
       if (r.busy !== undefined) busy(r.busy);
       if (r.mic) mic(r.mic.enabled, r.mic.on);
+      $("meter").textContent = (r.score === null || r.score === undefined) ? "" :
+        `PEGEL ${Math.round(r.level*100)}%  ·  ERKENNUNG ${r.score.toFixed(2)} / ${r.threshold.toFixed(2)}`;
     } catch (err) { /* Python noch nicht bereit */ }
     setTimeout(poll, 70);
   }

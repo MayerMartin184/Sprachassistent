@@ -63,3 +63,32 @@ def play_wav(wav_bytes: bytes) -> None:
         data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
     sd.play(data, rate)
     sd.wait()
+
+
+def list_input_devices() -> list[tuple[int, str, bool]]:
+    """(Index, Name, ist Standard) aller Eingabegeräte."""
+    import sounddevice as sd
+
+    default = sd.default.device[0] if isinstance(sd.default.device, (list, tuple)) else sd.default.device
+    devices = []
+    for idx, dev in enumerate(sd.query_devices()):
+        if dev.get("max_input_channels", 0) > 0:
+            devices.append((idx, dev["name"], idx == default))
+    return devices
+
+
+def resolve_input_device(selector: str | None) -> int | None:
+    """Wandelt Name (Teilstring, Groß-/Kleinschreibung egal) oder Nummer in einen Geräteindex um."""
+    if not selector:
+        return None
+    devices = list_input_devices()
+    if selector.strip().isdigit():
+        idx = int(selector)
+        if any(d[0] == idx for d in devices):
+            return idx
+        raise ValueError(f"Kein Eingabegerät mit Nummer {idx}")
+    needle = selector.strip().lower()
+    for idx, name, _ in devices:
+        if needle in name.lower():
+            return idx
+    raise ValueError(f"Kein Mikrofon mit '{selector}' im Namen gefunden")
