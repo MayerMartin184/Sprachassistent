@@ -144,6 +144,14 @@
     <div class="field"><label>Mikrofon</label><select id="s_in"></select></div>
     <div class="field"><label>Lautsprecher</label><select id="s_out"></select></div>
     <div class="field"><label>Stimme</label><select id="s_voice"></select></div>
+    <div class="hint">Mehrsprachige Stimmen sprechen Deutsch, Rumänisch und Englisch. Charakterstimmen (Monster, Roboter, Kind …) sind Varianten mit veränderter Tonhöhe und Tempo.</div>
+    <div class="field"><label>Sprachen verstehen</label><div class="range" id="s_langs">
+      <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="de-DE"> Deutsch</label>
+      <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="ro-RO"> Rumänisch</label>
+      <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="en-US"> Englisch</label>
+    </div></div>
+    <div class="field"><label>Aufmerksam bleiben</label><div class="range"><input type="range" id="s_att" min="0" max="60" step="5"><span class="val" id="v_att"></span></div></div>
+    <div class="hint">Nach einer Antwort hört Jarvis so lange ohne „Hey Jarvis“ weiter zu. 0 = immer Wake-Word nötig.</div>
     <div class="field"><label>Wake-Word-Schwelle</label><div class="range"><input type="range" id="s_ww" min="0.2" max="0.8" step="0.05"><span class="val" id="v_ww"></span></div></div>
     <div class="hint">Niedriger = springt leichter an (mehr Fehlauslösungen), höher = strenger.</div>
     <div class="field"><label>Pause bis Absenden</label><div class="range"><input type="range" id="s_pause" min="800" max="3000" step="100"><span class="val" id="v_pause"></span></div></div>
@@ -164,14 +172,14 @@ const ui = (() => {
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const canvas = $("wave"), ctx = canvas.getContext("2d");
   let state = "idle", level = 0, amp = 0.05, t = 0, name = "JARVIS";
-  const TEXT = {idle:"Bereit", listening:"Sag „Hey {n}“", wake:"Ich höre", processing:"Ich arbeite", speaking:"Ich spreche", loading:"Lade Wake-Word-Modell"};
+  const TEXT = {idle:"Bereit", listening:"Sag „Hey {n}“", wake:"Ich höre", processing:"Ich arbeite", speaking:"Ich spreche", loading:"Lade Wake-Word-Modell", attentive:"Ich bin noch da – sprich einfach weiter"};
 
   function resize(){ const r = canvas.getBoundingClientRect(); canvas.width = r.width * devicePixelRatio; canvas.height = r.height * devicePixelRatio; }
   addEventListener("resize", resize); resize();
 
   function target(){
     if (state === "wake") return 0.15 + 0.85 * level;
-    if (state === "listening") return 0.06 + 0.4 * level;
+    if (state === "listening" || state === "attentive") return 0.06 + 0.4 * level;
     if (state === "speaking") return 0.35 + 0.45 * Math.abs(Math.sin(t*3.7) * Math.sin(t*1.3)) + (Math.random()-0.5)*0.08;
     if (state === "processing") return 0.18 + 0.08 * Math.sin(t*4);
     return 0.06;
@@ -247,7 +255,9 @@ const ui = (() => {
     const st = await api().get_settings();
     fill($("s_in"), st.inputs, st.audio_input_device, true);
     fill($("s_out"), st.outputs, st.audio_output_device, true);
-    fill($("s_voice"), st.voices, st.tts_voice, false);
+    fill($("s_voice"), st.voices, st.tts_preset, false); $("s_voice").value = st.tts_preset;
+    [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
+    $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
     $("s_ww").value = st.wake_word_threshold; $("s_pause").value = st.speech_end_silence_ms; $("s_vad").value = st.vad_threshold;
     showVal("s_ww","v_ww", v => Number(v).toFixed(2)); showVal("s_pause","v_pause", v => (v/1000).toFixed(1)+" s"); showVal("s_vad","v_vad", v => Number(v).toFixed(2));
     $("s_msg").textContent = ""; $("overlay").classList.add("open");
@@ -258,7 +268,9 @@ const ui = (() => {
   $("s_save").addEventListener("click", async () => {
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
     const msg = await api().save_settings({
-      audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_voice: $("s_voice").value,
+      audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,
+      attention_seconds: parseInt($("s_att").value),
+      speech_languages: [...$("s_langs").querySelectorAll("input:checked")].map(cb => cb.value).join(",") || "de-DE",
       wake_word_threshold: parseFloat($("s_ww").value), speech_end_silence_ms: parseInt($("s_pause").value), vad_threshold: parseFloat($("s_vad").value),
     });
     $("s_msg").textContent = msg;

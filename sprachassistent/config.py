@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # Azure Speech
     azure_speech_key: str | None = None
     azure_speech_region: str | None = None
-    speech_language: str = "de-DE"
-    tts_voice: str = "de-DE-KatjaNeural"
+    speech_languages: str = "de-DE,ro-RO"  # Erkennung parallel in diesen Sprachen, das sicherste Ergebnis gewinnt
+    tts_preset: str = "seraphina"  # Schlüssel aus der Stimmen-Palette (speech/azure.py)
+    tts_voice: str | None = None  # optionale explizite Azure-Stimme, überstimmt die Palette
+    attention_seconds: int = 20  # nach einer Antwort so lange ohne Wake-Word zuhören
 
     # Microsoft 365
     ms_client_id: str | None = None
@@ -78,7 +80,7 @@ class Settings(BaseSettings):
             return Path(value).expanduser() if value.strip() else None
         return value
 
-    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", mode="before")
+    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
@@ -135,6 +137,10 @@ class Settings(BaseSettings):
         if not lines_out:
             return "Keine .env-Datei gefunden."
         return "\n".join(lines_out) + "\nErwartet: AZURE_SPEECH_KEY = 32 Zeichen, AZURE_SPEECH_REGION = germanywestcentral"
+
+    @property
+    def language_list(self) -> list[str]:
+        return [x.strip() for x in self.speech_languages.split(",") if x.strip()] or ["de-DE"]
 
     @property
     def speech_enabled(self) -> bool:

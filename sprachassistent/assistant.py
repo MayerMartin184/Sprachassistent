@@ -54,8 +54,9 @@ class Assistant:
             self.speech = AzureSpeech(
                 settings.azure_speech_key or "",
                 settings.azure_speech_region or "",
-                settings.speech_language,
-                settings.tts_voice,
+                languages=settings.language_list,
+                voice_preset=settings.tts_preset,
+                voice=settings.tts_voice,
             )
             self.features.append(f"Sprache (Wake-Word „Hey {settings.assistant_name}“)" if settings.wake_word_enabled else "Sprache")
         else:

@@ -71,21 +71,12 @@ class Api:
             on_utterance=self._on_utterance, on_state=self._on_listener_state,
             model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold, device=device,
             end_silence_ms=self.s.speech_end_silence_ms, vad_threshold=self.s.vad_threshold,
+            attention_ms=self.s.attention_seconds * 1000,
         )
         self._state, self._status = "loading", None
         self.listener.start()
 
     # --- Einstellungen (Dialog im Fenster) -------------------------------------
-    VOICES = [
-        ("de-DE-KatjaNeural", "Katja (weiblich)"), ("de-DE-ConradNeural", "Conrad (männlich)"),
-        ("de-DE-AmalaNeural", "Amala (weiblich)"), ("de-DE-ChristophNeural", "Christoph (männlich)"),
-        ("de-DE-ElkeNeural", "Elke (weiblich)"), ("de-DE-KillianNeural", "Killian (männlich)"),
-        ("de-DE-KlarissaNeural", "Klarissa (weiblich)"), ("de-DE-LouisaNeural", "Louisa (weiblich)"),
-        ("de-DE-RalfNeural", "Ralf (männlich)"), ("de-DE-TanjaNeural", "Tanja (weiblich)"),
-        ("de-DE-SeraphinaMultilingualNeural", "Seraphina (weiblich, natürlich)"),
-        ("de-DE-FlorianMultilingualNeural", "Florian (männlich, natürlich)"),
-    ]
-
     def get_settings(self) -> dict[str, Any]:
         inputs: list[dict[str, Any]] = []
         outputs: list[dict[str, Any]] = []
@@ -96,9 +87,14 @@ class Api:
             outputs = [{"id": i, "name": n, "default": d} for i, n, d in list_devices("output")]
         except Exception as exc:  # noqa: BLE001
             log.warning("Geräteliste nicht verfügbar: %s", exc)
+        from .speech.azure import VOICE_PRESETS
+
         s = self.s
         return {
-            "inputs": inputs, "outputs": outputs, "voices": [{"id": v, "name": n} for v, n in self.VOICES],
+            "inputs": inputs, "outputs": outputs,
+            "voices": [{"id": k, "name": n} for k, n, *_ in VOICE_PRESETS],
+            "tts_preset": s.tts_preset, "attention_seconds": s.attention_seconds,
+            "languages": s.language_list,
             "audio_input_device": s.audio_input_device or "", "audio_output_device": s.audio_output_device or "",
             "wake_word_threshold": s.wake_word_threshold, "speech_end_silence_ms": s.speech_end_silence_ms,
             "vad_threshold": s.vad_threshold, "tts_voice": s.tts_voice, "assistant_name": s.assistant_name,
@@ -113,7 +109,8 @@ class Api:
         mapping = {
             "audio_input_device": ("AUDIO_INPUT_DEVICE", str), "audio_output_device": ("AUDIO_OUTPUT_DEVICE", str),
             "wake_word_threshold": ("WAKE_WORD_THRESHOLD", float), "speech_end_silence_ms": ("SPEECH_END_SILENCE_MS", int),
-            "vad_threshold": ("VAD_THRESHOLD", float), "tts_voice": ("TTS_VOICE", str),
+            "vad_threshold": ("VAD_THRESHOLD", float), "tts_preset": ("TTS_PRESET", str),
+            "attention_seconds": ("ATTENTION_SECONDS", int), "speech_languages": ("SPEECH_LANGUAGES", str),
         }
         env_values: dict[str, str] = {}
         for field, (env_key, cast) in mapping.items():
@@ -129,11 +126,13 @@ class Api:
         update_env_file(Path(env_path), env_values)
 
         if self.assistant is not None and self.assistant.speech is not None:
-            self.assistant.speech.voice = s.tts_voice
+            self.assistant.speech.voice_preset = s.tts_preset
+            self.assistant.speech.languages = s.language_list
         if self.listener is not None:
             self.listener.threshold = s.wake_word_threshold
             self.listener.end_silence_ms = s.speech_end_silence_ms
             self.listener.vad_threshold = s.vad_threshold
+            self.listener.attention_ms = s.attention_seconds * 1000
             try:
                 from .audio.io import resolve_device
 
@@ -229,7 +228,7 @@ class Api:
             finally:
                 self._busy = False
                 if self.listener is not None and self._mic_on:
-                    self.listener.resume()
+                    self.listener.resume(attentive=self.s.attention_seconds > 0)
                 else:
                     self._set_state("idle")
 
@@ -267,7 +266,7 @@ class Api:
                 play_wav(beep_wav(), resolve_device(self.s.audio_output_device, "output"))
             except Exception as exc:  # noqa: BLE001
                 self._push("System", f"Bestätigungston fehlgeschlagen: {exc}")
-        elif state in ("listening", "processing"):
+        elif state in ("listening", "processing", "attentive"):
             self._set_state(state)
         elif state == "cancel":
             self._push("System", "Ich habe nichts gehört. Bitte direkt nach dem Ton sprechen.")

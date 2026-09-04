@@ -113,6 +113,7 @@ class WakeWordListener:
         device: int | None = None,
         end_silence_ms: int = 1500,
         vad_threshold: float = 0.5,
+        attention_ms: int = 20000,
     ) -> None:
         self.on_utterance = on_utterance
         self.on_state = on_state
@@ -121,6 +122,9 @@ class WakeWordListener:
         self.device = device
         self.end_silence_ms = end_silence_ms
         self.vad_threshold = vad_threshold
+        self.attention_ms = attention_ms  # nach einer Antwort so lange ohne Wake-Word zuhören
+        self._attention_left = 0
+        self._speech_run = 0
         self._stop = threading.Event()
         self._paused = threading.Event()
         self._thread: threading.Thread | None = None
@@ -153,8 +157,15 @@ class WakeWordListener:
     def pause(self) -> None:
         self._paused.set()
 
-    def resume(self) -> None:
+    def resume(self, attentive: bool = False) -> None:
+        """Weiter zuhören; mit attentive=True zunächst ohne Wake-Word (Nachfrage-Fenster)."""
+        self._attention_left = self.attention_ms if attentive else 0
+        self._speech_run = 0
         self._paused.clear()
+
+    @property
+    def attentive(self) -> bool:
+        return self._attention_left > 0
 
     @property
     def paused(self) -> bool:
@@ -205,10 +216,27 @@ class WakeWordListener:
                     if was_paused:
                         was_paused = False
                         model.reset()
-                        self.on_state("listening")
+                        self.on_state("attentive" if self._attention_left > 0 else "listening")
                     samples = np.frombuffer(frame, dtype=np.int16)
                     level = rms(frame)
                     self.level = max(0.0, min(1.0, (level - self._noise) / max(self._noise * 6.0, 1500.0)))
+
+                    if segment is None and self._attention_left > 0:
+                        # Nachfrage-Fenster: Sprache startet die Aufnahme direkt, ohne Wake-Word
+                        self._attention_left -= FRAME_MS
+                        speech_prob = float(vad.predict(samples, frame_size=640))
+                        self.level = max(self.level, speech_prob * 0.6)
+                        self._speech_run = self._speech_run + FRAME_MS if speech_prob >= self.vad_threshold else 0
+                        if self._speech_run >= 240:
+                            self._attention_left = 0
+                            self.on_state("wake")
+                            segment = UtteranceSegmenter(vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms, discard_ms=0)
+                            for _ in range(3):  # die bereits gehörten Sprachframes gehören dazu
+                                segment.feed(frame, speech_prob)
+                        elif self._attention_left <= 0:
+                            model.reset()
+                            self.on_state("listening")
+                        continue
 
                     if segment is None:
                         self._noise = 0.97 * self._noise + 0.03 * level
