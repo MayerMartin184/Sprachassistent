@@ -75,6 +75,9 @@ def make_handler(api: Api):  # noqa: ANN201
                 elif path == "/api/open_settings":
                     api.open_settings()
                     self._json({"ok": True})
+                elif path == "/api/setup_m365":
+                    threading.Thread(target=api.setup_m365, daemon=True).start()
+                    self._json({"message": "Einrichtung läuft – Anweisungen erscheinen im Verlauf."})
                 elif path == "/api/confirm":
                     api.answer_confirm(str(data.get("id")), bool(data.get("ok")))
                     self._json({"ok": True})

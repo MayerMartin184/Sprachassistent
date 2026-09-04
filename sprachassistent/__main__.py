@@ -40,6 +40,20 @@ def run_cli() -> None:
             print(f"{settings.assistant_name}: {assistant.handle_text(text)}\n")
 
 
+def run_setup_m365() -> None:
+    """Microsoft-App im Terminal einrichten (Alternative zum Knopf im Fenster)."""
+    from pathlib import Path
+
+    from .config import update_env_file
+    from .tools.m365_setup import M365Setup
+
+    settings = load_settings()
+    result = M365Setup(settings.ms_tenant_id, lambda msg: print("\n" + msg + "\n")).run(settings.ms_client_id)
+    env_path = settings.env_file_in_use() or Path(".env").resolve()
+    update_env_file(Path(env_path), {"MS_CLIENT_ID": result["client_id"], "MS_TENANT_ID": result["tenant_id"] or settings.ms_tenant_id})
+    print(f"Fertig. MS_CLIENT_ID={result['client_id']} ({'neu' if result['created'] else 'korrigiert'}). Jarvis neu starten.")
+
+
 def run_backend(port: int) -> None:
     """Backend-Prozess (wird vom Fenster gestartet)."""
     from .server import serve
@@ -99,6 +113,7 @@ def main() -> None:
     parser.add_argument("--cli", action="store_true", help="Textmodus im Terminal statt Fenster")
     parser.add_argument("--tk", action="store_true", help="Klassisches Tkinter-Fenster statt Web-Ansicht")
     parser.add_argument("--backend", action="store_true", help="Nur Backend-Prozess (intern, vom Fenster gestartet)")
+    parser.add_argument("--setup-m365", action="store_true", help="Microsoft-App-Registrierung automatisch einrichten")
     parser.add_argument("--port", type=int, default=0, help="Port des Backends (intern)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Ausführliche Protokollierung")
     args = parser.parse_args()
@@ -106,7 +121,9 @@ def main() -> None:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    if args.backend:
+    if args.setup_m365:
+        run_setup_m365()
+    elif args.backend:
         run_backend(args.port)
     elif args.cli:
         try:

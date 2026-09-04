@@ -176,6 +176,32 @@ class Api:
                 return f"Gespeichert, aber Mikrofon nicht gefunden: {exc}"
         return "Gespeichert und übernommen."
 
+    def setup_m365(self) -> str:
+        """Richtet die Microsoft-App automatisch ein (Administrator-Anmeldung per Gerätecode)."""
+        from pathlib import Path as _Path
+
+        from .config import update_env_file
+        from .tools.m365_setup import M365Setup
+
+        self._push("System", "Microsoft-Einrichtung gestartet …")
+        try:
+            result = M365Setup(self.s.ms_tenant_id, lambda msg: self._push("System", msg)).run(self.s.ms_client_id)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Microsoft-Einrichtung fehlgeschlagen")
+            self._push("System", f"Microsoft-Einrichtung fehlgeschlagen: {exc}")
+            return f"Fehlgeschlagen: {exc}"
+        env_path = self.s.env_file_in_use() or _Path(".env").resolve()
+        update_env_file(_Path(env_path), {"MS_CLIENT_ID": result["client_id"], "MS_TENANT_ID": result["tenant_id"] or self.s.ms_tenant_id})
+        cache = self.s.data_dir / "ms_token_cache.json"
+        if cache.exists():
+            cache.unlink()  # alte Anmeldung passt nicht mehr zu den neuen Berechtigungen
+        what = "neu angelegt" if result["created"] else "korrigiert"
+        msg = (f"Microsoft-App {what}: Umleitungsadresse, Berechtigungen und Administrator-Zustimmung gesetzt. "
+               f"MS_CLIENT_ID={result['client_id']} in die .env geschrieben. Bitte Jarvis neu starten; "
+               "beim ersten Kalender- oder Mail-Zugriff öffnet sich dann die normale Anmeldung im Browser.")
+        self._push("System", msg)
+        return msg
+
     # --- Vom Browser aufgerufen ----------------------------------------------
     def config(self) -> dict[str, Any]:
         s = self.s

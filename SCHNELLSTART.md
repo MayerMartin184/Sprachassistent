@@ -91,6 +91,14 @@ Identitätsprüfung trotzdem verlangt.
 
 ### 4d. Microsoft 365 anbinden (To Do, Mail, Kalender, Teams-Transkripte)
 
+**Einfacher Weg (empfohlen, wenn du Administrator deiner Firma bist):** Jarvis starten, rechts oben
+„Einstellungen“, Knopf **„Verbindung automatisch einrichten“**. Im Verlauf erscheint ein Code; den auf
+https://microsoft.com/devicelogin eingeben, mit dem Administrator-Konto anmelden, zustimmen. Jarvis legt
+die App selbst an bzw. korrigiert sie, trägt `MS_CLIENT_ID` in die `.env` ein und sagt, wenn er fertig ist.
+Danach Jarvis neu starten. Die folgenden Handschritte sind dann nicht nötig.
+
+**Handweg:**
+
 Damit Jarvis auf dein Postfach zugreifen darf, meldest du ihn bei Microsoft als „App“ an.
 Er bekommt dadurch keine Passwörter; du erlaubst den Zugriff einmalig per Anmeldung im Browser.
 

@@ -173,6 +173,10 @@
     </div></div>
     <div class="field"><label>Ruhezeit Kommentare</label><div class="range"><input type="range" id="s_cool" min="2" max="60" step="1"><span class="val" id="v_cool"></span></div></div>
     <div class="hint">Höchstens ein Kommentar pro Zeitraum. Die Gesichtserkennung läuft nur auf deinem Rechner; erst bei einem Ereignis geht ein Bild an Claude. Abschalten wirkt nach Neustart wieder ein.</div>
+    <div class="field"><label>Microsoft 365</label><div class="range">
+      <button class="btn" id="s_m365" type="button">Verbindung automatisch einrichten</button>
+    </div></div>
+    <div class="hint">Meldet dich einmal als Administrator an (Code im Verlauf) und richtet die Jarvis-App in Entra selbst ein: Umleitungsadresse, Berechtigungen, Zustimmung. Ersetzt das Klicken im Azure-Portal.</div>
     <div class="actions">
       <button class="btn" id="s_env" type="button">Schlüssel &amp; Konten (.env)</button>
       <span class="saved" id="s_msg"></span>
@@ -269,6 +273,7 @@ const ui = (() => {
     open_settings: () => call("open_settings", {}),
     get_settings: () => call("settings"),
     save_settings: async v => (await call("settings", v)).message,
+    setup_m365: async () => (await call("setup_m365", {})).message,
     config: () => call("config"),
     poll: () => call("poll"),
     confirm: (id, ok) => call("confirm", {id, ok}),
@@ -310,6 +315,7 @@ const ui = (() => {
   $("settings").addEventListener("click", openSettings);
   $("s_cancel").addEventListener("click", () => $("overlay").classList.remove("open"));
   $("s_env").addEventListener("click", () => api().open_settings());
+  $("s_m365").addEventListener("click", async () => { $("s_msg").textContent = await api().setup_m365(); $("overlay").classList.remove("open"); });
   $("s_save").addEventListener("click", async () => {
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
     const msg = await api().save_settings({
