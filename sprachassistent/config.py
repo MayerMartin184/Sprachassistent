@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     @classmethod
     def _expand(cls, value: object) -> object:
         if isinstance(value, str):
-            return Path(value).expanduser()
+            return Path(value).expanduser() if value.strip() else None
         return value
 
     @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", mode="before")
