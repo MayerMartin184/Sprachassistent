@@ -40,7 +40,7 @@ def run_cli() -> None:
             print(f"{settings.assistant_name}: {assistant.handle_text(text)}\n")
 
 
-def run_gui() -> None:
+def run_gui(use_tk: bool = False) -> None:
     import tkinter as tk
     from tkinter import messagebox
 
@@ -48,6 +48,15 @@ def run_gui() -> None:
     _log_to_file(settings.data_dir / "jarvis.log")
     try:
         check_required(settings)
+        if not use_tk:
+            try:
+                from . import webapp
+            except ImportError:
+                webapp = None  # type: ignore[assignment]
+                logging.warning("pywebview nicht verfügbar – klassisches Fenster")
+            if webapp is not None:
+                webapp.run(settings)
+                return
         from .app import App
 
         App(settings).run()
@@ -74,6 +83,7 @@ def _log_to_file(path) -> None:  # noqa: ANN001
 def main() -> None:
     parser = argparse.ArgumentParser(prog="sprachassistent", description="Sprachgesteuerter Desktop-Assistent")
     parser.add_argument("--cli", action="store_true", help="Textmodus im Terminal statt Fenster")
+    parser.add_argument("--tk", action="store_true", help="Klassisches Tkinter-Fenster statt Web-Ansicht")
     parser.add_argument("-v", "--verbose", action="store_true", help="Ausführliche Protokollierung")
     args = parser.parse_args()
     logging.basicConfig(
@@ -87,7 +97,7 @@ def main() -> None:
             print(f"\n{exc}", file=sys.stderr)
             sys.exit(1)
     else:
-        run_gui()
+        run_gui(use_tk=args.tk)
 
 
 if __name__ == "__main__":

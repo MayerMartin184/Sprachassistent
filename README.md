@@ -23,7 +23,9 @@ To Do, Mail, Kalender und Teams.
 ```
 sprachassistent/
   __main__.py        Einstieg (Fenster / --cli)
-  app.py             Fenster: pulsierender Zustandskreis, Verlauf, Texteingabe, Mikrofon-Schalter
+  webapp.py          Fenster mit Web-Ansicht (pywebview): Standard-Oberfläche
+  ui/index.html      Oberfläche in HTML/CSS/JS im Mayer-E-Concept-Design
+  app.py             Klassisches Tkinter-Fenster (Ausweich, --tk)
 Installieren.bat     Windows: Einrichtung per Doppelklick + Desktop-Verknüpfung
 Jarvis.bat           Windows: Start ohne Konsolenfenster
 Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erhalten
@@ -109,7 +111,8 @@ oder per Besprechungsrichtlinie automatisch). Abrufbar sind Besprechungen aus de
 ## Start
 
 ```bash
-python -m sprachassistent          # Fenster mit Wake-Word
+python -m sprachassistent          # Fenster mit Wake-Word (Web-Ansicht)
+python -m sprachassistent --tk     # klassisches Fenster, falls die Web-Ansicht nicht startet
 python -m sprachassistent --cli    # Textmodus im Terminal (kein Mikrofon nötig)
 python -m sprachassistent -v       # ausführliches Protokoll
 ```

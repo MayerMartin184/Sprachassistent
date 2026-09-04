@@ -81,14 +81,7 @@ class App:
             if settings.speech_enabled:
                 self._log("System", "Wake-Word deaktiviert (WAKE_WORD_ENABLED=false) – Eingabe per Text.")
             else:
-                missing = " und ".join(settings.missing_speech_values())
-                env_file = settings.env_file_in_use()
-                where = f"Gelesene Datei: {env_file}" if env_file else "Es wurde keine .env-Datei gefunden."
-                self._log(
-                    "System",
-                    f"Sprache nicht eingerichtet: In der .env fehlt {missing}. {where}\n"
-                    "Rechts oben „EINSTELLUNGEN“ öffnet die Datei. Nach dem Speichern Jarvis neu starten.",
-                )
+                self._log("System", "Sprache nicht eingerichtet – Eingabe per Text.\n" + settings.speech_diagnosis())
                 self.mic_var.set(False)
                 self.mic_check.config(state="disabled")
             self._set_state("idle")

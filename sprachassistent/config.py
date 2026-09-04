@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         # Schlüssel oft dort eintragen; .env.txt, weil der Windows-Editor gern ".txt" anhängt.
         env_file=(".env.example", ".env", ".env.txt", str(DATA_DIR / ".env")),
         env_file_encoding="utf-8",
+        env_ignore_empty=True,  # leere Zeile (KEY=) überschreibt keinen Wert aus einer anderen Datei
         extra="ignore",
     )
 
@@ -101,6 +102,33 @@ class Settings(BaseSettings):
             if candidate.exists():
                 return candidate.resolve()
         return None
+
+    @staticmethod
+    def speech_diagnosis() -> str:
+        """Zeigt pro Datei, was in den Azure-Zeilen steht (Schlüssel maskiert) – zum Finden von Tippfehlern."""
+        wanted = ("AZURE_SPEECH_KEY", "AZURE_SPEECH_REGION")
+        lines_out: list[str] = []
+        for candidate in (Path(".env"), Path(".env.txt"), Path(".env.example"), DATA_DIR / ".env"):
+            if not candidate.exists():
+                continue
+            found: dict[str, str] = {}
+            for raw in candidate.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = raw.strip()
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key, value = key.strip().lstrip("#").strip().upper(), value.strip().strip("\"'")
+                if key in wanted:
+                    shown = "(leer)" if not value else (value[:4] + "…" + value[-3:] + f" ({len(value)} Zeichen)" if key.endswith("KEY") else value)
+                    if raw.lstrip().startswith("#"):
+                        shown += "  <- Zeile ist mit # auskommentiert"
+                    found[key] = shown
+            lines_out.append(f"{candidate.resolve()}:")
+            for key in wanted:
+                lines_out.append(f"   {key} = {found.get(key, '(Zeile fehlt)')}")
+        if not lines_out:
+            return "Keine .env-Datei gefunden."
+        return "\n".join(lines_out) + "\nErwartet: AZURE_SPEECH_KEY = 32 Zeichen, AZURE_SPEECH_REGION = germanywestcentral"
 
     @property
     def speech_enabled(self) -> bool:
