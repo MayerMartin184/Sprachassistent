@@ -7,7 +7,7 @@ from typing import Callable
 
 from .agent.agent import Agent
 from .config import Settings
-from .tools import files, lists, m365, memory, reminders, tasks, webcam
+from .tools import computer, files, lists, m365, memory, reminders, tasks, webcam
 from .tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -43,12 +43,17 @@ class Assistant:
             self.features.append("Aufgaben (lokal)")
 
         registry.register_all(lists.build_tools(lists.ListManager(settings.data_dir)))
-        registry.register_all(files.build_tools(files.FileManager(settings.documents_root)))
+        roots = files.default_roots()
+        roots["Dokumente"] = settings.documents_root
+        roots.update(files.parse_roots(settings.file_roots))
+        self.files = files.FileManager(roots, confirm)
+        registry.register_all(files.build_tools(self.files))
+        registry.register_all(computer.build_tools())
         self.memory = memory.Memory(settings.data_dir)
         registry.register_all(memory.build_tools(self.memory))
         self.reminders = reminders.Reminders(settings.data_dir, settings.timezone)
         registry.register_all(reminders.build_tools(self.reminders))
-        self.features += ["Listen", "Dateiablage", "Web-Recherche", "Gedächtnis", "Erinnerungen"]
+        self.features += ["Listen", "Dateien (" + ", ".join(roots) + ")", "Programme", "Bildschirm", "Web-Recherche", "Gedächtnis", "Erinnerungen"]
 
         if settings.webcam_enabled and webcam.available():
             registry.register_all(webcam.build_tools(settings.webcam_index, snapshot_provider))

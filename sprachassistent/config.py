@@ -82,6 +82,7 @@ class Settings(BaseSettings):
 
     # Lokales
     documents_root: Path = Path.home() / "Documents"
+    file_roots: str | None = None  # weitere Ordner: "Projekte=D:\\Projekte;Server=\\\\srv\\daten" (Name=Pfad;...)
     data_dir: Path = DATA_DIR
     timezone: str = "Europe/Berlin"
 
@@ -92,7 +93,7 @@ class Settings(BaseSettings):
             return Path(value).expanduser() if value.strip() else None
         return value
 
-    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", mode="before")
+    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

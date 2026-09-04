@@ -20,7 +20,11 @@ def _check(tools):
 def test_local_tool_signatures(tmp_path):
     _check(tasks.build_tools(tasks.TaskManager(tmp_path)))
     _check(lists.build_tools(lists.ListManager(tmp_path)))
-    _check(files.build_tools(files.FileManager(tmp_path)))
+    _check(files.build_tools(files.FileManager({"Dokumente": tmp_path})))
+    from sprachassistent.tools import computer, memory, reminders
+    _check(computer.build_tools())
+    _check(memory.build_tools(memory.Memory(tmp_path)))
+    _check(reminders.build_tools(reminders.Reminders(tmp_path, "Europe/Berlin")))
 
 
 def test_m365_tool_signatures():

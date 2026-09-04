@@ -9,7 +9,7 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **E-Mail**: lesen, beantworten, ordnen, ablegen (Versand immer mit Bestätigung)
 - **Kalender**: Termine anzeigen und anlegen
 - **Teams-Besprechungen**: Transkript laden, kurz zusammenfassen, offene Punkte als To-Do anlegen
-- **Dateiablage**: suchen, verschieben, Ordner anlegen, Notizen schreiben (nur im Ablageordner)
+- **Rechner**: Dateien in Dokumente, Downloads, Desktop, OneDrive und weiteren Ordnern suchen (auch im Inhalt), lesen (PDF, Word, Excel), ablegen, ordnen, kopieren, öffnen, in den Papierkorb (mit Rückfrage); Programme starten, Webseiten öffnen, Zwischenablage, Bildschirmfoto
 - **Webcam**: auf Zuruf ein Bild aufnehmen und dazu beraten („Jarvis, schau dir das Dokument an“)
 - **Gedächtnis**: merkt sich Absprachen, Gewohnheiten, Personen und Vorlieben dauerhaft und nutzt sie
 - **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen
@@ -52,7 +52,8 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   tools/reminders.py Erinnerungen mit Zeit (JSON), Scheduler in webapp.py
   presence.py        Präsenz per Webcam (lokale Gesichtserkennung, Ereignisse)
   ambient.py         Mithör-Modus: Protokoll, Extraktion, Sitzungs-Review
-  tools/files.py     Dateiablage, begrenzt auf DOCUMENTS_ROOT
+  tools/files.py     Dateien in freigegebenen Wurzelordnern (Dokumente, Downloads, Desktop, OneDrive, FILE_ROOTS)
+  tools/computer.py  Programme starten, URL öffnen, Zwischenablage, Bildschirmfoto
   tools/lists.py     Listen (lokal)
   tools/tasks.py     Aufgaben lokal (nur ohne Microsoft 365)
 tests/               Unit-Tests ohne API-Aufrufe
@@ -94,7 +95,7 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 | `BRAND_BG`, `BRAND_PANEL`, `BRAND_GRID`, `BRAND_LINE`, `BRAND_PRIMARY`, `BRAND_ACCENT`, `BRAND_TEXT`, `BRAND_MUTED` | nein | Hex-Farben der Oberfläche; Standard ist das Mayer-E-Concept-Design |
 | `BRAND_FONT`, `BRAND_MONO`, `BRAND_TITLE`, `LOGO_PATH` | nein | Schriftarten, Untertitel im Kopf, PNG-Logo |
 | `MS_CLIENT_ID`, `MS_TENANT_ID` | für Microsoft 365 | Ohne `MS_CLIENT_ID` laufen Aufgaben lokal, Mail/Kalender/Teams sind aus |
-| `DOCUMENTS_ROOT` | nein | Ablageordner, Standard `~/Documents` |
+| `DOCUMENTS_ROOT`, `FILE_ROOTS` | nein | Ablageordner (Standard `~/Documents`) und weitere freigegebene Ordner als `Name=Pfad;Name=Pfad` |
 | `TIMEZONE` | nein | Standard `Europe/Berlin` |
 
 ### Azure Speech einrichten

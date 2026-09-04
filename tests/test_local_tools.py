@@ -44,24 +44,43 @@ def test_lists_dedupe_and_remove(tmp_path):
         lm.remove("gibtsnicht")
 
 
-def test_files_sandbox_and_operations(tmp_path):
-    root = tmp_path / "docs"
-    fm = FileManager(root)
-    fm.write_text("notizen/idee.md", "# Idee")
-    assert "Idee" in fm.read_text("notizen/idee.md")
+def test_files_sandbox_and_operations(tmp_path, monkeypatch):
+    docs, dl = tmp_path / "docs", tmp_path / "downloads"
+    fm = FileManager({"Dokumente": docs, "Downloads": dl}, confirm=lambda _m: True)
+    fm.write("Dokumente/notizen/idee.md", "# Idee")
+    assert "Idee" in fm.read("Dokumente/notizen/idee.md")
     with pytest.raises(FileExistsError):
-        fm.write_text("notizen/idee.md", "x")
-    fm.mkdir("Archiv/2026")
-    assert "Verschoben" in fm.move("notizen/idee.md", "Archiv/2026")
-    assert (root / "Archiv/2026/idee.md").exists()
-    assert "idee.md" in fm.search("idee")
-    assert "Archiv" in fm.list_dir()
-    for bad in ("../ausserhalb.txt", "/etc/passwd", "Archiv/../../x"):
-        with pytest.raises(PermissionError):
+        fm.write("Dokumente/notizen/idee.md", "x")
+    fm.mkdir("Dokumente/Archiv/2026")
+    assert "Verschoben" in fm.move("Dokumente/notizen/idee.md", "Dokumente/Archiv/2026")
+    assert (docs / "Archiv/2026/idee.md").exists()
+    assert "Kopiert" in fm.copy("Dokumente/Archiv/2026/idee.md", "Downloads/idee_kopie.md")
+    assert (dl / "idee_kopie.md").exists()
+    assert "idee" in fm.search("idee").lower()
+    assert "idee.md" in fm.search("# Idee", "Dokumente", content=True)
+    assert "Archiv" in fm.list_dir("Dokumente")
+    for bad in ("Dokumente/../ausserhalb.txt", "/etc/passwd", "Fremd/x", ""):
+        with pytest.raises((PermissionError, KeyError, ValueError)):
             fm.resolve(bad)
+    (docs / "bild.png").write_bytes(b"\x89PNG")
     with pytest.raises(ValueError):
-        (root / "bild.png").write_bytes(b"\x89PNG")
-        fm.read_text("bild.png")
+        fm.read("Dokumente/bild.png")
+    # Löschen: Bestätigung und Papierkorb (hier: Ersatzordner, da kein send2trash)
+    import sys
+    monkeypatch.setitem(sys.modules, "send2trash", None)
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
+    fm.confirm = lambda _m: False
+    assert "abgelehnt" in fm.delete("Downloads/idee_kopie.md")
+    fm.confirm = lambda _m: True
+    assert "Verschoben" in fm.delete("Downloads/idee_kopie.md") and not (dl / "idee_kopie.md").exists()
+    with pytest.raises(PermissionError):
+        fm.delete("Downloads")
+
+
+def test_parse_roots():
+    from sprachassistent.tools.files import parse_roots
+    roots = parse_roots(r"Projekte=D:\Projekte;Server=\\srv\daten; kaputt")
+    assert set(roots) == {"Projekte", "Server"}
 
 
 def test_update_env_file_replaces_and_appends(tmp_path):
