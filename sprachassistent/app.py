@@ -283,8 +283,8 @@ class App:
             self._post(self._log, "System", f"Wake-Word-Erkennung nicht verfügbar: {state[6:]}")
             self._post(self._set_state, "idle")
 
-    def _on_utterance(self, wav: bytes) -> None:
-        self._run_in_background(self._process_audio, wav)
+    def _on_utterance(self, wavs: list[bytes]) -> None:
+        self._run_in_background(self._process_audio, wavs)
 
     def _toggle_mic(self) -> None:
         if self.listener is None:
@@ -321,9 +321,9 @@ class App:
         finally:
             self._post(self._done)
 
-    def _process_audio(self, wav: bytes) -> None:
+    def _process_audio(self, wavs: list[bytes]) -> None:
         self._status("ERKENNE SPRACHE")
-        text = self.assistant.transcribe(wav)
+        text = self.assistant.transcribe(wavs)
         if not text:
             self._post(self._log, "System", "Nichts verstanden.")
             return

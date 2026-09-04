@@ -62,3 +62,13 @@ def test_files_sandbox_and_operations(tmp_path):
     with pytest.raises(ValueError):
         (root / "bild.png").write_bytes(b"\x89PNG")
         fm.read_text("bild.png")
+
+
+def test_update_env_file_replaces_and_appends(tmp_path):
+    from sprachassistent.config import update_env_file
+
+    env = tmp_path / ".env"
+    env.write_text("# Kommentar\nANTHROPIC_API_KEY=abc\nTTS_VOICE=de-DE-KatjaNeural\n", encoding="utf-8")
+    update_env_file(env, {"TTS_VOICE": "de-DE-ConradNeural", "AUDIO_INPUT_DEVICE": "USB PnP"})
+    text = env.read_text(encoding="utf-8")
+    assert text == "# Kommentar\nANTHROPIC_API_KEY=abc\nTTS_VOICE=de-DE-ConradNeural\nAUDIO_INPUT_DEVICE=USB PnP\n"

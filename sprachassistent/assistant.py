@@ -71,10 +71,14 @@ class Assistant:
             return ""
         return self.agent.run(text)
 
-    def transcribe(self, wav_bytes: bytes) -> str:
+    def transcribe(self, wavs: list[bytes] | bytes) -> str:
+        """Transkribiert ein oder mehrere Teilstücke und fügt die Texte zusammen."""
         if self.speech is None:
             raise RuntimeError("Spracherkennung nicht konfiguriert (AZURE_SPEECH_KEY/REGION fehlen).")
-        return self.speech.transcribe(wav_bytes)
+        if isinstance(wavs, bytes):
+            wavs = [wavs]
+        parts = [self.speech.transcribe(w) for w in wavs]
+        return " ".join(p for p in parts if p).strip()
 
     def speak(self, text: str) -> str | None:
         """Spricht den Text. Rückgabe: None bei Erfolg, sonst eine Fehlerbeschreibung für den Nutzer."""

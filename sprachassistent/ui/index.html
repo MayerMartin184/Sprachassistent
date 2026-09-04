@@ -70,6 +70,26 @@
   .send{background:var(--primary);color:var(--bg);border:0;font:700 11px var(--mono);letter-spacing:.26em;text-transform:uppercase;padding:0 28px;cursor:pointer;box-shadow:0 0 18px rgba(167,227,234,.35);transition:.15s}
   .send:hover{background:#c4f0f4;box-shadow:0 0 26px rgba(167,227,234,.6)}
   .send:disabled{opacity:.45;cursor:wait;box-shadow:none}
+  /* Einstellungsdialog */
+  .overlay{position:fixed;inset:0;background:rgba(7,14,17,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:10}
+  .overlay.open{display:flex}
+  .dialog{width:min(640px,92vw);max-height:88vh;overflow:auto;background:var(--panel);border:1px solid var(--line);box-shadow:0 0 60px rgba(95,179,191,.15);padding:28px 30px 24px;position:relative}
+  .dialog h2{font-family:var(--mono);font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--primary);margin:0 0 22px;display:flex;align-items:center;gap:12px}
+  .dialog h2::before{content:"";width:28px;height:1px;background:var(--primary)}
+  .field{display:grid;grid-template-columns:190px 1fr;gap:14px;align-items:center;margin-bottom:16px}
+  .field label{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .field select,.field input[type=text]{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);font:500 13px var(--font);padding:10px 12px;outline:none}
+  .field select:focus,.field input:focus{border-color:var(--primary)}
+  .field .range{display:flex;align-items:center;gap:12px}
+  .field input[type=range]{flex:1;accent-color:var(--primary)}
+  .field .val{font-family:var(--mono);font-size:11px;color:var(--primary);min-width:52px;text-align:right}
+  .hint{font-size:12px;color:var(--muted);margin:-8px 0 16px 204px;line-height:1.45}
+  .actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+  .btn{border:1px solid var(--line);background:transparent;color:var(--text);font:700 10px var(--mono);letter-spacing:.22em;text-transform:uppercase;padding:11px 18px;cursor:pointer}
+  .btn:hover{border-color:var(--primary);color:var(--primary)}
+  .btn.primary{background:var(--primary);color:var(--bg);border-color:var(--primary)}
+  .btn.primary:hover{background:#c4f0f4;color:var(--bg)}
+  .saved{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--primary);text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -116,6 +136,26 @@
     <input type="text" id="input" placeholder="Oder hier tippen …" autofocus>
     <button class="send" id="send" type="submit">Senden&nbsp;→</button>
   </form>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="dialog">
+    <h2>Einstellungen</h2>
+    <div class="field"><label>Mikrofon</label><select id="s_in"></select></div>
+    <div class="field"><label>Lautsprecher</label><select id="s_out"></select></div>
+    <div class="field"><label>Stimme</label><select id="s_voice"></select></div>
+    <div class="field"><label>Wake-Word-Schwelle</label><div class="range"><input type="range" id="s_ww" min="0.2" max="0.8" step="0.05"><span class="val" id="v_ww"></span></div></div>
+    <div class="hint">Niedriger = springt leichter an (mehr Fehlauslösungen), höher = strenger.</div>
+    <div class="field"><label>Pause bis Absenden</label><div class="range"><input type="range" id="s_pause" min="800" max="3000" step="100"><span class="val" id="v_pause"></span></div></div>
+    <div class="hint">Wie lange du schweigen musst, bis Jarvis den Auftrag abschickt. Länger, wenn du beim Sprechen nachdenkst.</div>
+    <div class="field"><label>Sprach-Empfindlichkeit</label><div class="range"><input type="range" id="s_vad" min="0.2" max="0.8" step="0.05"><span class="val" id="v_vad"></span></div></div>
+    <div class="hint">Ab welcher Sicherheit ein Geräusch als Sprache zählt. Niedriger bei leiser Stimme, höher bei lautem Umfeld.</div>
+    <div class="actions">
+      <button class="btn" id="s_env" type="button">Schlüssel &amp; Konten (.env)</button>
+      <span class="saved" id="s_msg"></span>
+      <span><button class="btn" id="s_cancel" type="button">Schließen</button> <button class="btn primary" id="s_save" type="button">Speichern</button></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -194,7 +234,35 @@ const ui = (() => {
     $("input").value = ""; busy(true); await api().send(v);
   });
   $("mic").addEventListener("change", e => api().set_mic(e.target.checked));
-  $("settings").addEventListener("click", () => api().open_settings());
+  // Einstellungsdialog
+  const fill = (sel, items, current, allowDefault) => {
+    sel.innerHTML = "";
+    if (allowDefault) sel.append(new Option("Windows-Standard", ""));
+    items.forEach(it => sel.append(new Option(it.name + (it.default ? "  (Standard)" : ""), it.id)));
+    const match = [...sel.options].find(o => o.value !== "" && (String(o.value) === String(current) || (current && o.text.toLowerCase().includes(String(current).toLowerCase()))));
+    sel.value = match ? match.value : "";
+  };
+  const showVal = (id, out, fmt) => { const el = $(id); const upd = () => $(out).textContent = fmt(el.value); el.addEventListener("input", upd); upd(); };
+  async function openSettings(){
+    const st = await api().get_settings();
+    fill($("s_in"), st.inputs, st.audio_input_device, true);
+    fill($("s_out"), st.outputs, st.audio_output_device, true);
+    fill($("s_voice"), st.voices, st.tts_voice, false);
+    $("s_ww").value = st.wake_word_threshold; $("s_pause").value = st.speech_end_silence_ms; $("s_vad").value = st.vad_threshold;
+    showVal("s_ww","v_ww", v => Number(v).toFixed(2)); showVal("s_pause","v_pause", v => (v/1000).toFixed(1)+" s"); showVal("s_vad","v_vad", v => Number(v).toFixed(2));
+    $("s_msg").textContent = ""; $("overlay").classList.add("open");
+  }
+  $("settings").addEventListener("click", openSettings);
+  $("s_cancel").addEventListener("click", () => $("overlay").classList.remove("open"));
+  $("s_env").addEventListener("click", () => api().open_settings());
+  $("s_save").addEventListener("click", async () => {
+    const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
+    const msg = await api().save_settings({
+      audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_voice: $("s_voice").value,
+      wake_word_threshold: parseFloat($("s_ww").value), speech_end_silence_ms: parseInt($("s_pause").value), vad_threshold: parseFloat($("s_vad").value),
+    });
+    $("s_msg").textContent = msg;
+  });
   async function poll(){
     try {
       const r = await api().poll();

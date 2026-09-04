@@ -1,4 +1,9 @@
-"""Wake-Word-Erkennung („Hey Jarvis“) mit openWakeWord und anschließende Aufnahme bis zur Sprechpause."""
+"""Wake-Word-Erkennung („Hey Jarvis“) mit openWakeWord, danach Aufnahme bis zur Sprechpause.
+
+Ob gesprochen wird, entscheidet eine Sprach-Aktivitätserkennung (Silero-VAD, in openWakeWord enthalten),
+nicht die Lautstärke. Lange Aufträge werden an kurzen Pausen in Teilstücke geschnitten, weil die
+Azure-Kurzerkennung nur einen Satz am Stück verarbeitet.
+"""
 
 from __future__ import annotations
 
@@ -24,68 +29,98 @@ def rms(frame: bytes) -> float:
 
 
 class UtteranceSegmenter:
-    """Sammelt Frames nach dem Wake-Word, bis der Nutzer eine Pause macht.
+    """Sammelt Frames nach dem Wake-Word, bis der Nutzer eine längere Pause macht.
 
     Reine Logik ohne Audio-Geräte, damit sie testbar bleibt.
-    Rückgabe von feed(): None (weiter), "done" (Äußerung fertig) oder "cancel" (nichts gesagt).
+    feed() erhält pro Frame die Sprachwahrscheinlichkeit (0..1) und liefert
+    None (weiter), "done" (Äußerung fertig) oder "cancel" (nichts gesagt).
     """
 
     def __init__(
         self,
-        speech_threshold: float,
-        silence_ms: int = 1200,
-        max_ms: int = 30000,
-        no_speech_ms: int = 5000,
+        vad_threshold: float = 0.5,
+        end_silence_ms: int = 1500,
+        chunk_pause_ms: int = 600,
+        max_ms: int = 60000,
+        no_speech_ms: int = 6000,
         min_speech_ms: int = 240,
         discard_ms: int = 240,
     ) -> None:
-        self.speech_threshold = speech_threshold
-        self.silence_ms = silence_ms
+        self.vad_threshold = vad_threshold
+        self.end_silence_ms = end_silence_ms
+        self.chunk_pause_ms = chunk_pause_ms
         self.max_ms = max_ms
         self.no_speech_ms = no_speech_ms
         self.min_speech_ms = min_speech_ms
         self.discard_ms = discard_ms
         self._frames: list[bytes] = []
+        self._cuts: list[int] = []  # Frame-Indizes, an denen ein Teilstück endet
+        self._chunk_speech: list[int] = []  # Sprachdauer (ms) je abgeschlossenem Teilstück
         self._elapsed = 0
         self._speech_ms = 0
+        self._chunk_speech_ms = 0
         self._silence_run = 0
+        self._cut_done = False
 
-    def feed(self, frame: bytes, level: float) -> str | None:
+    def feed(self, frame: bytes, speech_prob: float) -> str | None:
         self._elapsed += FRAME_MS
         if self._elapsed <= self.discard_ms:
             return None  # Bestätigungston / Nachhall des Wake-Words überspringen
         self._frames.append(frame)
-        if level >= self.speech_threshold:
+        if speech_prob >= self.vad_threshold:
             self._speech_ms += FRAME_MS
+            self._chunk_speech_ms += FRAME_MS
             self._silence_run = 0
+            self._cut_done = False
         else:
             self._silence_run += FRAME_MS
+            if self._silence_run >= self.chunk_pause_ms and not self._cut_done and self._chunk_speech_ms >= self.min_speech_ms:
+                self._cuts.append(len(self._frames))
+                self._chunk_speech.append(self._chunk_speech_ms)
+                self._chunk_speech_ms = 0
+                self._cut_done = True
         if self._speech_ms < self.min_speech_ms:
             return "cancel" if self._elapsed >= self.no_speech_ms else None
-        if self._silence_run >= self.silence_ms or self._elapsed >= self.max_ms:
+        if self._silence_run >= self.end_silence_ms or self._elapsed >= self.max_ms:
             return "done"
         return None
 
-    def wav(self) -> bytes:
-        return pcm_to_wav(b"".join(self._frames), SAMPLE_RATE)
+    def wavs(self) -> list[bytes]:
+        """Teilstücke als WAV. Stücke ohne Sprache entfallen; die Endpause wird ans letzte Stück angehängt."""
+        bounds = [0] + [c for c in self._cuts if c < len(self._frames)] + [len(self._frames)]
+        speech = self._chunk_speech[: len(bounds) - 2] + [self._chunk_speech_ms]
+        chunks: list[list[bytes]] = []
+        for (start, end), ms in zip(zip(bounds, bounds[1:]), speech):
+            frames = self._frames[start:end]
+            if ms >= self.min_speech_ms:
+                chunks.append(frames)
+            elif chunks:
+                chunks[-1].extend(frames[:4])  # etwas Nachlauf, damit das Wortende nicht abgeschnitten wird
+        if not chunks:
+            return [pcm_to_wav(b"".join(self._frames), SAMPLE_RATE)]
+        return [pcm_to_wav(b"".join(c), SAMPLE_RATE) for c in chunks]
 
 
 class WakeWordListener:
-    """Hintergrund-Thread: hört dauerhaft zu, meldet Zustände und liefert fertige Äußerungen als WAV."""
+    """Hintergrund-Thread: hört dauerhaft zu, meldet Zustände und liefert fertige Äußerungen als WAV-Teilstücke."""
 
     def __init__(
         self,
-        on_utterance: Callable[[bytes], None],
+        on_utterance: Callable[[list[bytes]], None],
         on_state: Callable[[str], None],
         model_name: str = "hey_jarvis",
         threshold: float = 0.5,
         device: int | None = None,
+        end_silence_ms: int = 1500,
+        vad_threshold: float = 0.5,
     ) -> None:
         self.on_utterance = on_utterance
         self.on_state = on_state
         self.model_name = model_name
         self.threshold = threshold
         self.device = device
+        self.end_silence_ms = end_silence_ms
+        self.vad_threshold = vad_threshold
         self._stop = threading.Event()
         self._paused = threading.Event()
         self._thread: threading.Thread | None = None
@@ -99,14 +134,23 @@ class WakeWordListener:
     def start(self) -> None:
         if self._thread is not None:
             return
+        self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="wakeword", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+            self._thread = None
+
+    def restart(self, device: int | None) -> None:
+        """Neues Mikrofon übernehmen (Gerätewechsel im laufenden Betrieb)."""
+        self.stop()
+        self.device = device
+        self.start()
 
     def pause(self) -> None:
-        """Nicht reagieren (z. B. während Sprachausgabe oder Verarbeitung)."""
         self._paused.set()
 
     def resume(self) -> None:
@@ -117,23 +161,24 @@ class WakeWordListener:
         return self._paused.is_set()
 
     # --- Schleife -------------------------------------------------------------
-    def _load_model(self):  # noqa: ANN202
+    def _load_models(self):  # noqa: ANN202
         import openwakeword
         from openwakeword.model import Model
+        from openwakeword.vad import VAD
 
         models_dir = Path(openwakeword.__file__).parent / "resources" / "models"
-        needed = ["melspectrogram.onnx", "embedding_model.onnx", f"{self.model_name}_v0.1.onnx"]
+        needed = ["melspectrogram.onnx", "embedding_model.onnx", "silero_vad.onnx", f"{self.model_name}_v0.1.onnx"]
         if not all((models_dir / n).exists() for n in needed):
             log.info("Lade Wake-Word-Modelle herunter …")
             openwakeword.utils.download_models(model_names=[self.model_name])
-        return Model(wakeword_models=[self.model_name], inference_framework="onnx")
+        return Model(wakeword_models=[self.model_name], inference_framework="onnx"), VAD()
 
     def _run(self) -> None:
         import numpy as np
         import sounddevice as sd
 
         try:
-            model = self._load_model()
+            model, vad = self._load_models()
         except Exception as exc:  # noqa: BLE001
             log.exception("Wake-Word-Modell nicht ladbar")
             self.on_state(f"error:{exc}")
@@ -161,30 +206,34 @@ class WakeWordListener:
                         was_paused = False
                         model.reset()
                         self.on_state("listening")
+                    samples = np.frombuffer(frame, dtype=np.int16)
                     level = rms(frame)
                     self.level = max(0.0, min(1.0, (level - self._noise) / max(self._noise * 6.0, 1500.0)))
 
                     if segment is None:
                         self._noise = 0.97 * self._noise + 0.03 * level
-                        score = float(model.predict(np.frombuffer(frame, dtype=np.int16))[self.model_name])
+                        score = float(model.predict(samples)[self.model_name])
                         self._score_frames += 1
                         if score >= self.score or self._score_frames >= 25:  # ~2 s Haltezeit
                             self.score, self._score_frames = score, 0
                         if score >= self.threshold:
                             model.reset()
                             self.on_state("wake")
-                            segment = UtteranceSegmenter(speech_threshold=max(self._noise * 3.0, 300.0))
+                            segment = UtteranceSegmenter(vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms)
                         continue
 
-                    result = segment.feed(frame, level)
+                    speech_prob = float(vad.predict(samples, frame_size=640))
+                    self.level = max(self.level, speech_prob * 0.6)
+                    result = segment.feed(frame, speech_prob)
                     if result == "done":
-                        wav = segment.wav()
+                        wavs = segment.wavs()
                         segment = None
                         self._paused.set()  # bis die Antwort gesprochen ist, nicht erneut auslösen
                         self.on_state("processing")
-                        self.on_utterance(wav)
+                        self.on_utterance(wavs)
                     elif result == "cancel":
                         segment = None
+                        self.on_state("cancel")
                         self.on_state("listening")
         except Exception as exc:  # noqa: BLE001
             log.exception("Wake-Word-Schleife abgebrochen")

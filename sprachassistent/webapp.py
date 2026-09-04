@@ -49,34 +49,7 @@ class Api:
             return
         self._push("System", f"Funktionen: {self.assistant.capabilities}")
         if self.s.speech_enabled and self.s.wake_word_enabled:
-            from .audio.io import list_devices, list_input_devices, resolve_device, resolve_input_device
-            from .audio.wakeword import WakeWordListener
-
-            device = None
-            try:
-                devices = list_input_devices()
-                device = resolve_input_device(self.s.audio_input_device)
-                chosen = next((d for d in devices if d[0] == device), None) if device is not None else next((d for d in devices if d[2]), None)
-                lines = [f"Mikrofon: {chosen[1] if chosen else 'Windows-Standard'}", "Vorhandene Mikrofone (Nummer: Name):"]
-                lines += [f"   {i}: {n}{'  (Standard)' if d else ''}" for i, n, d in devices]
-                lines.append("Anderes Mikrofon wählen: AUDIO_INPUT_DEVICE=<Nummer oder Namensteil> in der .env.")
-                outputs = list_devices("output")
-                out_idx = resolve_device(self.s.audio_output_device, "output")
-                out = next((d for d in outputs if d[0] == out_idx), None) if out_idx is not None else next((d for d in outputs if d[2]), None)
-                lines.append(f"Lautsprecher: {out[1] if out else 'Windows-Standard'}")
-                lines.append("Vorhandene Lautsprecher (Nummer: Name):")
-                lines += [f"   {i}: {n}{'  (Standard)' if d else ''}" for i, n, d in outputs]
-                lines.append("Anderen Lautsprecher wählen: AUDIO_OUTPUT_DEVICE=<Nummer oder Namensteil> in der .env.")
-                self._push("System", "\n".join(lines))
-            except Exception as exc:  # noqa: BLE001
-                self._push("System", f"Mikrofon-Auswahl: {exc} – Windows-Standard wird verwendet.")
-
-            self.listener = WakeWordListener(
-                on_utterance=self._on_utterance, on_state=self._on_listener_state,
-                model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold, device=device,
-            )
-            self._state, self._status = "loading", None
-            self.listener.start()
+            self._start_listener()
         else:
             self._mic_on = False
             if self.s.speech_enabled:
@@ -84,6 +57,92 @@ class Api:
             else:
                 self._push("System", "Sprache nicht eingerichtet – Eingabe per Text.\n" + self.s.speech_diagnosis())
             self._set_state("idle")
+
+    def _start_listener(self) -> None:
+        from .audio.io import resolve_device
+        from .audio.wakeword import WakeWordListener
+
+        device = None
+        try:
+            device = resolve_device(self.s.audio_input_device, "input")
+        except Exception as exc:  # noqa: BLE001
+            self._push("System", f"Mikrofon-Auswahl: {exc} – Windows-Standard wird verwendet.")
+        self.listener = WakeWordListener(
+            on_utterance=self._on_utterance, on_state=self._on_listener_state,
+            model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold, device=device,
+            end_silence_ms=self.s.speech_end_silence_ms, vad_threshold=self.s.vad_threshold,
+        )
+        self._state, self._status = "loading", None
+        self.listener.start()
+
+    # --- Einstellungen (Dialog im Fenster) -------------------------------------
+    VOICES = [
+        ("de-DE-KatjaNeural", "Katja (weiblich)"), ("de-DE-ConradNeural", "Conrad (männlich)"),
+        ("de-DE-AmalaNeural", "Amala (weiblich)"), ("de-DE-ChristophNeural", "Christoph (männlich)"),
+        ("de-DE-ElkeNeural", "Elke (weiblich)"), ("de-DE-KillianNeural", "Killian (männlich)"),
+        ("de-DE-KlarissaNeural", "Klarissa (weiblich)"), ("de-DE-LouisaNeural", "Louisa (weiblich)"),
+        ("de-DE-RalfNeural", "Ralf (männlich)"), ("de-DE-TanjaNeural", "Tanja (weiblich)"),
+        ("de-DE-SeraphinaMultilingualNeural", "Seraphina (weiblich, natürlich)"),
+        ("de-DE-FlorianMultilingualNeural", "Florian (männlich, natürlich)"),
+    ]
+
+    def get_settings(self) -> dict[str, Any]:
+        inputs: list[dict[str, Any]] = []
+        outputs: list[dict[str, Any]] = []
+        try:
+            from .audio.io import list_devices
+
+            inputs = [{"id": i, "name": n, "default": d} for i, n, d in list_devices("input")]
+            outputs = [{"id": i, "name": n, "default": d} for i, n, d in list_devices("output")]
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Geräteliste nicht verfügbar: %s", exc)
+        s = self.s
+        return {
+            "inputs": inputs, "outputs": outputs, "voices": [{"id": v, "name": n} for v, n in self.VOICES],
+            "audio_input_device": s.audio_input_device or "", "audio_output_device": s.audio_output_device or "",
+            "wake_word_threshold": s.wake_word_threshold, "speech_end_silence_ms": s.speech_end_silence_ms,
+            "vad_threshold": s.vad_threshold, "tts_voice": s.tts_voice, "assistant_name": s.assistant_name,
+            "speech_enabled": s.speech_enabled, "env_file": str(s.env_file_in_use() or Path(".env").resolve()),
+        }
+
+    def save_settings(self, values: dict[str, Any]) -> str:
+        """Schreibt die Werte in die .env und übernimmt sie sofort."""
+        from .config import update_env_file
+
+        s = self.s
+        mapping = {
+            "audio_input_device": ("AUDIO_INPUT_DEVICE", str), "audio_output_device": ("AUDIO_OUTPUT_DEVICE", str),
+            "wake_word_threshold": ("WAKE_WORD_THRESHOLD", float), "speech_end_silence_ms": ("SPEECH_END_SILENCE_MS", int),
+            "vad_threshold": ("VAD_THRESHOLD", float), "tts_voice": ("TTS_VOICE", str),
+        }
+        env_values: dict[str, str] = {}
+        for field, (env_key, cast) in mapping.items():
+            if field not in values:
+                continue
+            raw = values[field]
+            value = cast(raw) if raw not in ("", None) else ("" if cast is str else None)
+            if value is None:
+                continue
+            setattr(s, field, value if value != "" else None)
+            env_values[env_key] = str(value)
+        env_path = s.env_file_in_use() or Path(".env").resolve()
+        update_env_file(Path(env_path), env_values)
+
+        if self.assistant is not None and self.assistant.speech is not None:
+            self.assistant.speech.voice = s.tts_voice
+        if self.listener is not None:
+            self.listener.threshold = s.wake_word_threshold
+            self.listener.end_silence_ms = s.speech_end_silence_ms
+            self.listener.vad_threshold = s.vad_threshold
+            try:
+                from .audio.io import resolve_device
+
+                device = resolve_device(s.audio_input_device, "input")
+                if device != self.listener.device:
+                    self.listener.restart(device)
+            except Exception as exc:  # noqa: BLE001
+                return f"Gespeichert, aber Mikrofon nicht gefunden: {exc}"
+        return "Gespeichert und übernommen."
 
     # --- Vom Browser aufgerufen ----------------------------------------------
     def config(self) -> dict[str, Any]:
@@ -185,18 +244,18 @@ class Api:
         if error:
             self._push("System", error)
 
-    def _process_audio(self, wav: bytes) -> None:
+    def _process_audio(self, wavs: list[bytes]) -> None:
         assert self.assistant is not None
         self._set_status("Erkenne Sprache")
-        text = self.assistant.transcribe(wav)
+        text = self.assistant.transcribe(wavs)
         if not text:
             self._push("System", "Nichts verstanden.")
             return
         self._push("Du", text)
         self._process_text(text)
 
-    def _on_utterance(self, wav: bytes) -> None:
-        self._run(self._process_audio, wav)
+    def _on_utterance(self, wavs: list[bytes]) -> None:
+        self._run(self._process_audio, wavs)
 
     def _on_listener_state(self, state: str) -> None:
         if state == "wake":
@@ -210,6 +269,8 @@ class Api:
                 self._push("System", f"Bestätigungston fehlgeschlagen: {exc}")
         elif state in ("listening", "processing"):
             self._set_state(state)
+        elif state == "cancel":
+            self._push("System", "Ich habe nichts gehört. Bitte direkt nach dem Ton sprechen.")
         elif state.startswith("error:"):
             self._push("System", f"Wake-Word-Erkennung nicht verfügbar: {state[6:]}")
             self.listener = None

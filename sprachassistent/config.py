@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     wake_word_enabled: bool = True
     wake_word_model: str = "hey_jarvis"
     wake_word_threshold: float = 0.5
+    speech_end_silence_ms: int = 1500  # Pause, nach der ein Auftrag abgeschickt wird
+    vad_threshold: float = 0.5  # Empfindlichkeit der Sprach-Aktivitätserkennung (niedriger = empfindlicher)
     assistant_name: str = "Jarvis"
 
     # Design (Hex-Farben; Standard = Mayer E-Concept: dunkles Petrol, Raster, hellcyanfarbene Akzente)
@@ -164,3 +166,19 @@ def check_required(settings: Settings) -> None:
             "ANTHROPIC_API_KEY=... deinen Schlüssel eintragen.\n\n"
             "Hinweis: Die Datei muss genau .env heißen (auch .env.txt wird akzeptiert)."
         )
+
+
+def update_env_file(path: Path, values: dict[str, str]) -> None:
+    """Setzt Werte in einer .env-Datei: vorhandene Zeilen ersetzen, fehlende anhängen, Rest unverändert."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    remaining = dict(values)
+    for i, raw in enumerate(lines):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key = stripped.partition("=")[0].strip()
+        if key in remaining:
+            lines[i] = f"{key}={remaining.pop(key)}"
+    for key, value in remaining.items():
+        lines.append(f"{key}={value}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
