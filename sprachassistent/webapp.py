@@ -103,9 +103,18 @@ class Api:
         from .speech.azure import VOICE_PRESETS
 
         s = self.s
+        speech = self.assistant.speech if self.assistant is not None else None
+        voices = []
+        for k, n, voice, *_ in VOICE_PRESETS:
+            label = n
+            if speech is not None:
+                used, replaced = speech.resolve_voice(voice)
+                if replaced:
+                    label += f"  [in deiner Region nicht verfügbar, Ersatz: {used.split('-')[-1].replace('Neural', '')}]"
+            voices.append({"id": k, "name": label})
         return {
             "inputs": inputs, "outputs": outputs,
-            "voices": [{"id": k, "name": n} for k, n, *_ in VOICE_PRESETS],
+            "voices": voices,
             "tts_preset": s.tts_preset, "attention_seconds": s.attention_seconds,
             "presence_enabled": s.presence_enabled, "presence_cooldown_min": s.presence_cooldown_min,
             "presence_available": self.presence is not None,
