@@ -74,6 +74,30 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("azure_speech_region", mode="after")
+    @classmethod
+    def _normalize_region(cls, value: str | None) -> str | None:
+        # "Germany West Central" / "(Europe) Germany West Central" -> "germanywestcentral"
+        if value is None:
+            return None
+        cleaned = value.split(")")[-1].strip().lower().replace(" ", "")
+        return cleaned or None
+
+    def missing_speech_values(self) -> list[str]:
+        missing = []
+        if not self.azure_speech_key:
+            missing.append("AZURE_SPEECH_KEY")
+        if not self.azure_speech_region:
+            missing.append("AZURE_SPEECH_REGION")
+        return missing
+
+    @staticmethod
+    def env_file_in_use() -> Path | None:
+        for candidate in (Path(".env"), Path(".env.txt"), DATA_DIR / ".env"):
+            if candidate.exists():
+                return candidate.resolve()
+        return None
+
     @property
     def speech_enabled(self) -> bool:
         return bool(self.azure_speech_key and self.azure_speech_region)

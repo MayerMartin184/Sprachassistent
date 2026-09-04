@@ -72,7 +72,14 @@ class App:
             if settings.speech_enabled:
                 self._log("System", "Wake-Word deaktiviert (WAKE_WORD_ENABLED=false) – Eingabe per Text.")
             else:
-                self._log("System", "Sprache nicht eingerichtet (AZURE_SPEECH_KEY/REGION fehlen) – Eingabe per Text.")
+                missing = " und ".join(settings.missing_speech_values())
+                env_file = settings.env_file_in_use()
+                where = f"Gelesene Datei: {env_file}" if env_file else "Es wurde keine .env-Datei gefunden."
+                self._log(
+                    "System",
+                    f"Sprache nicht eingerichtet: In der .env fehlt {missing}. {where}\n"
+                    "Rechts oben „EINSTELLUNGEN“ öffnet die Datei. Nach dem Speichern Jarvis neu starten.",
+                )
                 self.mic_var.set(False)
                 self.mic_check.config(state="disabled")
             self._set_state("idle")
@@ -105,6 +112,10 @@ class App:
             selectcolor=s.brand_panel, bd=0, highlightthickness=0,
         )
         self.mic_check.pack(side="right")
+        tk.Button(
+            head, text="EINSTELLUNGEN", command=self._open_settings, font=(f, 8), bg=s.brand_bg, fg=s.brand_muted,
+            activebackground=s.brand_bg, activeforeground=s.brand_text, relief="flat", bd=0, cursor="hand2",
+        ).pack(side="right", padx=(0, 16))
 
         # Wellen-Visualisierung
         self.canvas = tk.Canvas(self.root, width=WAVE_W, height=WAVE_H, bg=s.brand_bg, highlightthickness=0)
@@ -322,6 +333,27 @@ class App:
     def _notify(self, message: str) -> None:
         self._post(self._log, "System", message)
         self._post(messagebox.showinfo, "Microsoft-Anmeldung", message)
+
+    def _open_settings(self) -> None:
+        """Öffnet die .env im Standard-Editor; legt sie aus der Vorlage an, falls sie fehlt."""
+        import os
+        import shutil
+
+        env = self.s.env_file_in_use()
+        if env is None:
+            env = Path(".env").resolve()
+            example = Path(".env.example")
+            if example.exists():
+                shutil.copy(example, env)
+            else:
+                env.write_text("ANTHROPIC_API_KEY=\n", encoding="utf-8")
+        try:
+            os.startfile(str(env))  # type: ignore[attr-defined]  # Windows
+        except AttributeError:
+            import subprocess
+
+            subprocess.Popen(["open" if os.uname().sysname == "Darwin" else "xdg-open", str(env)])
+        self._log("System", f"Einstellungen geöffnet: {env}. Nach dem Speichern Jarvis neu starten.")
 
     def _close(self) -> None:
         if self.listener is not None:
