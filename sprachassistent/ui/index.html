@@ -158,6 +158,11 @@
     <div class="hint">Wie lange du schweigen musst, bis Jarvis den Auftrag abschickt. Länger, wenn du beim Sprechen nachdenkst.</div>
     <div class="field"><label>Sprach-Empfindlichkeit</label><div class="range"><input type="range" id="s_vad" min="0.2" max="0.8" step="0.05"><span class="val" id="v_vad"></span></div></div>
     <div class="hint">Ab welcher Sicherheit ein Geräusch als Sprache zählt. Niedriger bei leiser Stimme, höher bei lautem Umfeld.</div>
+    <div class="field"><label>Präsenz &amp; Kommentare</label><div class="range">
+      <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" id="s_presence"> Kamera beobachtet lokal, Jarvis kommentiert Ankunft und wiederholte Störungen</label>
+    </div></div>
+    <div class="field"><label>Ruhezeit Kommentare</label><div class="range"><input type="range" id="s_cool" min="2" max="60" step="1"><span class="val" id="v_cool"></span></div></div>
+    <div class="hint">Höchstens ein Kommentar pro Zeitraum. Die Gesichtserkennung läuft nur auf deinem Rechner; erst bei einem Ereignis geht ein Bild an Claude. Abschalten wirkt nach Neustart wieder ein.</div>
     <div class="actions">
       <button class="btn" id="s_env" type="button">Schlüssel &amp; Konten (.env)</button>
       <span class="saved" id="s_msg"></span>
@@ -258,6 +263,7 @@ const ui = (() => {
     fill($("s_voice"), st.voices, st.tts_preset, false); $("s_voice").value = st.tts_preset;
     [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
     $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
+    $("s_presence").checked = st.presence_enabled; $("s_cool").value = st.presence_cooldown_min; showVal("s_cool","v_cool", v => v + " min");
     $("s_ww").value = st.wake_word_threshold; $("s_pause").value = st.speech_end_silence_ms; $("s_vad").value = st.vad_threshold;
     showVal("s_ww","v_ww", v => Number(v).toFixed(2)); showVal("s_pause","v_pause", v => (v/1000).toFixed(1)+" s"); showVal("s_vad","v_vad", v => Number(v).toFixed(2));
     $("s_msg").textContent = ""; $("overlay").classList.add("open");
@@ -270,6 +276,7 @@ const ui = (() => {
     const msg = await api().save_settings({
       audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,
       attention_seconds: parseInt($("s_att").value),
+      presence_enabled: $("s_presence").checked, presence_cooldown_min: parseInt($("s_cool").value),
       speech_languages: [...$("s_langs").querySelectorAll("input:checked")].map(cb => cb.value).join(",") || "de-DE",
       wake_word_threshold: parseFloat($("s_ww").value), speech_end_silence_ms: parseInt($("s_pause").value), vad_threshold: parseFloat($("s_vad").value),
     });

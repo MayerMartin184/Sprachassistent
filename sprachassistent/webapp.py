@@ -11,6 +11,8 @@ import logging
 import os
 import shutil
 import threading
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,17 +39,37 @@ class Api:
         self._mic_on = True
         self.listener = None
         self.assistant: Assistant | None = None
+        self.presence = None
+        self._announced_events: set[str] = set()
+        self._announce_lock = threading.Lock()
 
     # --- Start ------------------------------------------------------------
     def start(self) -> None:
         """Wird nach dem Öffnen des Fensters im Hintergrund aufgerufen."""
+        snapshot = None
+        if self.s.webcam_enabled and self.s.presence_enabled:
+            try:
+                from .tools.webcam import available
+
+                if available():
+                    from .presence import PresenceWatcher
+
+                    self.presence = PresenceWatcher(
+                        self.s.webcam_index, self._on_presence_event,
+                        absence_min=self.s.presence_absence_min, cooldown_min=self.s.presence_cooldown_min,
+                    )
+                    self.presence.start()
+                    snapshot = self.presence.snapshot_jpeg
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Präsenz nicht gestartet: %s", exc)
         try:
-            self.assistant = Assistant(self.s, confirm=self._confirm, notify=self._notify, on_status=self._set_status)
+            self.assistant = Assistant(self.s, confirm=self._confirm, notify=self._notify, on_status=self._set_status, snapshot_provider=snapshot)
         except Exception as exc:  # noqa: BLE001
             log.exception("Assistent konnte nicht starten")
             self._push("System", f"Start fehlgeschlagen: {exc}")
             return
-        self._push("System", f"Funktionen: {self.assistant.capabilities}")
+        self._push("System", f"Funktionen: {self.assistant.capabilities}" + (", Präsenz" if self.presence else ""))
+        threading.Thread(target=self._scheduler, name="scheduler", daemon=True).start()
         if self.s.speech_enabled and self.s.wake_word_enabled:
             self._start_listener()
         else:
@@ -94,6 +116,8 @@ class Api:
             "inputs": inputs, "outputs": outputs,
             "voices": [{"id": k, "name": n} for k, n, *_ in VOICE_PRESETS],
             "tts_preset": s.tts_preset, "attention_seconds": s.attention_seconds,
+            "presence_enabled": s.presence_enabled, "presence_cooldown_min": s.presence_cooldown_min,
+            "presence_available": self.presence is not None,
             "languages": s.language_list,
             "audio_input_device": s.audio_input_device or "", "audio_output_device": s.audio_output_device or "",
             "wake_word_threshold": s.wake_word_threshold, "speech_end_silence_ms": s.speech_end_silence_ms,
@@ -111,23 +135,32 @@ class Api:
             "wake_word_threshold": ("WAKE_WORD_THRESHOLD", float), "speech_end_silence_ms": ("SPEECH_END_SILENCE_MS", int),
             "vad_threshold": ("VAD_THRESHOLD", float), "tts_preset": ("TTS_PRESET", str),
             "attention_seconds": ("ATTENTION_SECONDS", int), "speech_languages": ("SPEECH_LANGUAGES", str),
+            "presence_enabled": ("PRESENCE_ENABLED", bool), "presence_cooldown_min": ("PRESENCE_COOLDOWN_MIN", int),
         }
         env_values: dict[str, str] = {}
         for field, (env_key, cast) in mapping.items():
             if field not in values:
                 continue
             raw = values[field]
-            value = cast(raw) if raw not in ("", None) else ("" if cast is str else None)
+            if cast is bool:
+                value = bool(raw)
+            else:
+                value = cast(raw) if raw not in ("", None) else ("" if cast is str else None)
             if value is None:
                 continue
             setattr(s, field, value if value != "" else None)
-            env_values[env_key] = str(value)
+            env_values[env_key] = str(value).lower() if cast is bool else str(value)
         env_path = s.env_file_in_use() or Path(".env").resolve()
         update_env_file(Path(env_path), env_values)
 
         if self.assistant is not None and self.assistant.speech is not None:
             self.assistant.speech.voice_preset = s.tts_preset
             self.assistant.speech.languages = s.language_list
+        if self.presence is not None:
+            self.presence.logic.cooldown_s = s.presence_cooldown_min * 60
+            if not s.presence_enabled:
+                self.presence.stop()
+                self.presence = None
         if self.listener is not None:
             self.listener.threshold = s.wake_word_threshold
             self.listener.end_silence_ms = s.speech_end_silence_ms
@@ -276,6 +309,66 @@ class Api:
             self._mic_on = False
             self._set_state("idle")
 
+    # --- Proaktiv: Erinnerungen, Termine, Präsenz ---------------------------------
+    def _scheduler(self) -> None:
+        """Prüft alle 20 s fällige Erinnerungen und alle 60 s anstehende Termine."""
+        last_calendar = 0.0
+        while True:
+            try:
+                assert self.assistant is not None
+                for item in self.assistant.reminders.due():
+                    self._announce(f"Erinnerung, die der Nutzer gesetzt hat: „{item['text']}“ (fällig jetzt).")
+                if (
+                    self.assistant.m365 is not None and self.assistant.graph is not None
+                    and self.assistant.graph.has_account() and time.time() - last_calendar >= 60
+                ):
+                    last_calendar = time.time()
+                    for ev in self.assistant.m365.calendar_upcoming(self.s.calendar_lead_minutes):
+                        key = f"cal:{ev['id']}"
+                        if key in self._announced_events:
+                            continue
+                        self._announced_events.add(key)
+                        minutes = max(1, int((ev["start"] - datetime.now(ev["start"].tzinfo)).total_seconds() // 60))
+                        where = f", Ort: {ev['location']}" if ev.get("location") else (" (Teams)" if ev.get("online") else "")
+                        self._announce(f"In {minutes} Minuten beginnt der Termin „{ev['subject']}“{where}.")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Scheduler: %s", exc)
+            time.sleep(20)
+
+    def _on_presence_event(self, kind: str, description: str, jpeg: bytes | None) -> None:
+        self._announce(description, jpeg)
+
+    def _announce(self, description: str, jpeg: bytes | None = None) -> None:
+        """Lässt den Agenten eine kurze Meldung formulieren und spricht sie, sobald nichts anderes läuft."""
+        if self.assistant is None:
+            return
+        with self._announce_lock:
+            deadline = time.time() + 120
+            while self._busy and time.time() < deadline:
+                time.sleep(0.5)
+            if self._busy:
+                return
+            self._busy = True
+            try:
+                if self.listener is not None:
+                    self.listener.pause()
+                self._set_state("processing")
+                text = self.assistant.handle_event(description, jpeg)
+                self._push(self.s.assistant_name, text)
+                self._set_state("speaking")
+                error = self.assistant.speak(text)
+                if error:
+                    self._push("System", error)
+            except Exception as exc:  # noqa: BLE001
+                log.exception("Proaktive Meldung fehlgeschlagen")
+                self._push("System", f"Meldung fehlgeschlagen: {exc}")
+            finally:
+                self._busy = False
+                if self.listener is not None and self._mic_on:
+                    self.listener.resume(attentive=self.s.attention_seconds > 0)
+                else:
+                    self._set_state("idle")
+
     # --- Helfer ------------------------------------------------------------
     def _push(self, who: str, text: str) -> None:
         with self._lock:
@@ -314,6 +407,8 @@ def run(settings: Settings) -> None:
     def on_closed() -> None:
         if api.listener is not None:
             api.listener.stop()
+        if api.presence is not None:
+            api.presence.stop()
 
     window.events.closed += on_closed
     webview.start(api.start, private_mode=False)

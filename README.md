@@ -11,6 +11,12 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Teams-Besprechungen**: Transkript laden, kurz zusammenfassen, offene Punkte als To-Do anlegen
 - **Dateiablage**: suchen, verschieben, Ordner anlegen, Notizen schreiben (nur im Ablageordner)
 - **Webcam**: auf Zuruf ein Bild aufnehmen und dazu beraten („Jarvis, schau dir das Dokument an“)
+- **Gedächtnis**: merkt sich Absprachen, Gewohnheiten, Personen und Vorlieben dauerhaft und nutzt sie
+- **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen
+- **Präsenz**: erkennt lokal, wenn du zurückkommst oder dich wiederholt jemand unterbricht, und kommentiert gelegentlich
+- **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word
+- **Stimmen-Palette**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
+- **Mehrsprachig**: versteht Deutsch, Rumänisch und Englisch und antwortet in der gesprochenen Sprache
 
 Technik: Claude (Anthropic API) als Agent mit Werkzeugen und integrierter Websuche, openWakeWord
 für „Hey Jarvis“ (lokal, CPU), Azure Speech für Spracherkennung und Sprachausgabe, Microsoft Graph für
@@ -39,6 +45,9 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   tools/m365.py      To Do, Mail, Kalender, Teams-Transkripte über Graph (Kurz-IDs t1/m1/mt1)
   tools/teams.py     WebVTT-Transkript -> „Sprecher: Text“
   tools/webcam.py    Schnappschuss als Bild für Claude
+  tools/memory.py    Dauerhaftes Gedächtnis (JSON)
+  tools/reminders.py Erinnerungen mit Zeit (JSON), Scheduler in webapp.py
+  presence.py        Präsenz per Webcam (lokale Gesichtserkennung, Ereignisse)
   tools/files.py     Dateiablage, begrenzt auf DOCUMENTS_ROOT
   tools/lists.py     Listen (lokal)
   tools/tasks.py     Aufgaben lokal (nur ohne Microsoft 365)

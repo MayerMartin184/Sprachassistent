@@ -93,6 +93,9 @@ class GraphClient:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             self.cache_path.write_text(self._cache.serialize(), encoding="utf-8")
 
+    def has_account(self) -> bool:
+        return bool(self._app.get_accounts())
+
     def token(self) -> str:
         result = None
         accounts = self._app.get_accounts()
@@ -327,6 +330,31 @@ class M365Tools:
             loc = e.get("location", {}).get("displayName")
             lines.append(f"- {when}: {e.get('subject')}" + (f" @ {loc}" if loc else ""))
         return "\n".join(lines)
+
+    def calendar_upcoming(self, minutes: int) -> list[dict[str, Any]]:
+        """Termine, die in den nächsten `minutes` Minuten beginnen (für proaktive Hinweise)."""
+        now = datetime.now(self.tz)
+        data = self.graph.request(
+            "GET",
+            "/me/calendarView",
+            params={
+                "startDateTime": now.isoformat(),
+                "endDateTime": (now + timedelta(minutes=minutes)).isoformat(),
+                "$orderby": "start/dateTime",
+                "$top": 10,
+                "$select": "id,subject,start,location,isAllDay,onlineMeeting",
+            },
+            headers={"Prefer": f'outlook.timezone="{self.tz.key}"'},
+        )
+        result = []
+        for e in data.get("value", []):
+            if e.get("isAllDay"):
+                continue
+            start = datetime.fromisoformat(e["start"]["dateTime"][:19]).replace(tzinfo=self.tz)
+            if start >= now:
+                result.append({"id": e["id"], "subject": e.get("subject"), "start": start,
+                               "location": e.get("location", {}).get("displayName"), "online": bool(e.get("onlineMeeting"))})
+        return result
 
     def calendar_create_event(
         self,

@@ -30,6 +30,7 @@ class Agent:
         registry: ToolRegistry,
         on_status: StatusCallback | None = None,
         client: Any | None = None,
+        memory_summary: Callable[[], str] | None = None,
     ) -> None:
         self.settings = settings
         self.registry = registry
@@ -37,6 +38,7 @@ class Agent:
         self.client = client or anthropic.Anthropic(api_key=settings.anthropic_api_key)
         self.history: list[dict[str, Any]] = []
         self.tz = ZoneInfo(settings.timezone)
+        self.memory_summary = memory_summary or (lambda: "")
 
     # ------------------------------------------------------------------
     def reset(self) -> None:
@@ -45,18 +47,20 @@ class Agent:
     def _system(self) -> list[dict[str, Any]]:
         now = datetime.now(self.tz)
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
-        return [
-            {"type": "text", "text": system_prompt(self.settings.assistant_name), "cache_control": {"type": "ephemeral"}},
-            {"type": "text", "text": f"Aktuell: {weekday}, {now:%d.%m.%Y %H:%M} ({self.tz.key})."},
-        ]
+        blocks = [{"type": "text", "text": system_prompt(self.settings.assistant_name), "cache_control": {"type": "ephemeral"}}]
+        memory = self.memory_summary()
+        if memory:
+            blocks.append({"type": "text", "text": memory})
+        blocks.append({"type": "text", "text": f"Aktuell: {weekday}, {now:%d.%m.%Y %H:%M} ({self.tz.key})."})
+        return blocks
 
     def _tools(self) -> list[dict[str, Any]]:
         return self.registry.definitions() + SERVER_TOOLS
 
-    def run(self, user_text: str) -> str:
-        """Verarbeitet eine Nutzeräußerung bis zur endgültigen Antwort."""
+    def run(self, user_content: str | list[dict[str, Any]]) -> str:
+        """Verarbeitet eine Nutzeräußerung (Text oder Inhaltsblöcke, z. B. mit Bild) bis zur endgültigen Antwort."""
         start = len(self.history)
-        self.history.append({"role": "user", "content": user_text})
+        self.history.append({"role": "user", "content": user_content})
         try:
             return self._loop()
         except anthropic.AuthenticationError:

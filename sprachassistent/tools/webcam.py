@@ -71,7 +71,19 @@ def probe_cameras(max_index: int = 6) -> str:
     return "Funktionierende Kameranummern: " + ", ".join(working) + ". In der .env WEBCAM_INDEX=<Nummer> setzen."
 
 
-def build_tools(index: int = 0) -> list[Tool]:
+def build_tools(index: int = 0, snapshot_provider: Any = None) -> list[Tool]:
+    """snapshot_provider: optional Callable[[], bytes | None], liefert JPEG von einer bereits offenen Kamera."""
+
+    def run() -> list[dict[str, Any]]:
+        if snapshot_provider is not None:
+            jpg = snapshot_provider()
+            if jpg:
+                return [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(jpg).decode()}},
+                    {"type": "text", "text": f"Webcam-Aufnahme vom {datetime.now():%d.%m.%Y %H:%M:%S}."},
+                ]
+        return capture(index)
+
     return [
         Tool(
             name="webcam_capture",
@@ -80,6 +92,6 @@ def build_tools(index: int = 0) -> list[Tool]:
                 "Gegenstand oder Umgebung des Nutzers). Nur auf Aufforderung des Nutzers verwenden."
             ),
             input_schema=schema({}),
-            handler=lambda: capture(index),
+            handler=run,
         )
     ]

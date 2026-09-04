@@ -64,9 +64,15 @@ class Settings(BaseSettings):
     brand_title: str = "Mayer E-Concept · Assistant"
     logo_path: Path | None = None  # PNG, wird oben links angezeigt (sonst gezeichnetes Rautenzeichen)
 
-    # Webcam
+    # Webcam und Präsenz
     webcam_enabled: bool = True
     webcam_index: int = 0
+    presence_enabled: bool = True  # Kamera lokal beobachten: Ankunft, wiederholte Störungen -> gelegentlicher Kommentar
+    presence_cooldown_min: int = 10  # höchstens ein Kommentar pro so viele Minuten
+    presence_absence_min: int = 10  # ab so vielen Minuten Abwesenheit gilt Zurückkommen als Ankunft
+
+    # Proaktive Hinweise
+    calendar_lead_minutes: int = 10  # so viele Minuten vor einem Termin meldet sich Jarvis
 
     # Lokales
     documents_root: Path = Path.home() / "Documents"
