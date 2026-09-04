@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=1.26",
     "openwakeword>=0.6",
     "onnxruntime>=1.16",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
