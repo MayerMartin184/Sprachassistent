@@ -1,4 +1,4 @@
-"""Tkinter-Desktop-Oberfläche: Push-to-Talk, Texteingabe, Verlauf, Bestätigungsdialoge."""
+"""Tkinter-Desktop-Oberfläche: Wake-Word „Hey Jarvis“, Verlauf, Texteingabe, Bestätigungsdialoge."""
 
 from __future__ import annotations
 
@@ -9,90 +9,122 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 
 from .assistant import Assistant
-from .audio.io import Recorder
 from .config import Settings
 
 log = logging.getLogger(__name__)
+
+STATE_TEXT = {
+    "listening": "Wartet auf „Hey {name}“ …",
+    "wake": "Ja? Ich höre …",
+    "processing": "Verarbeite …",
+}
 
 
 class App:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.name = settings.assistant_name
         self.root = tk.Tk()
-        self.root.title("Sprachassistent")
+        self.root.title(self.name)
         self.root.geometry("760x560")
         self.root.minsize(560, 420)
 
         self._ui_queue: queue.Queue = queue.Queue()
         self._busy = False
-        self.recorder = Recorder()
+        self.listener = None
 
         self._build_widgets()
         self.assistant = Assistant(settings, confirm=self._confirm, notify=self._notify, on_status=self._status)
-        self._status(f"Bereit – {self.assistant.capabilities}")
-        self._log("System", "Halte die Sprechtaste (oder die Leertaste) gedrückt, sprich, und lass wieder los.")
-        if not settings.speech_enabled:
+        self._log("System", f"Funktionen: {self.assistant.capabilities}")
+
+        if settings.speech_enabled and settings.wake_word_enabled:
+            self._start_listener()
+        elif settings.speech_enabled:
+            self._log("System", "Wake-Word deaktiviert (WAKE_WORD_ENABLED=false) – Eingabe per Text.")
+        else:
             self._log("System", "Azure Speech ist nicht konfiguriert – Eingabe nur per Text.")
         self.root.after(100, self._drain_queue)
+        self.root.protocol("WM_DELETE_WINDOW", self._close)
 
     # --- Aufbau -----------------------------------------------------------
     def _build_widgets(self) -> None:
+        top = tk.Frame(self.root)
+        top.pack(fill="x", padx=10, pady=(8, 0))
         self.status_var = tk.StringVar(value="Starte …")
-        tk.Label(self.root, textvariable=self.status_var, anchor="w", fg="#555").pack(fill="x", padx=10, pady=(8, 0))
+        tk.Label(top, textvariable=self.status_var, anchor="w", fg="#555").pack(side="left", fill="x", expand=True)
+        self.mic_var = tk.BooleanVar(value=True)
+        self.mic_check = tk.Checkbutton(top, text="Mikrofon", variable=self.mic_var, command=self._toggle_mic)
+        self.mic_check.pack(side="right")
+
+        self.indicator = tk.Label(self.root, text="●", font=("Segoe UI", 28), fg="#bbb")
+        self.indicator.pack(pady=(2, 0))
 
         self.transcript = scrolledtext.ScrolledText(self.root, wrap="word", state="disabled", font=("Segoe UI", 11))
         self.transcript.pack(fill="both", expand=True, padx=10, pady=8)
         self.transcript.tag_config("Du", foreground="#0a5fb4", font=("Segoe UI", 11, "bold"))
-        self.transcript.tag_config("Assistent", foreground="#1b7f3b", font=("Segoe UI", 11, "bold"))
+        self.transcript.tag_config(self.name, foreground="#1b7f3b", font=("Segoe UI", 11, "bold"))
         self.transcript.tag_config("System", foreground="#888", font=("Segoe UI", 10, "italic"))
 
         row = tk.Frame(self.root)
-        row.pack(fill="x", padx=10, pady=(0, 8))
+        row.pack(fill="x", padx=10, pady=(0, 10))
         self.entry = tk.Entry(row, font=("Segoe UI", 11))
         self.entry.pack(side="left", fill="x", expand=True)
         self.entry.bind("<Return>", lambda _e: self._send_text())
         tk.Button(row, text="Senden", command=self._send_text).pack(side="left", padx=(6, 0))
+        self.entry.focus_set()
 
-        self.talk_button = tk.Button(
-            self.root, text="🎙  Halten zum Sprechen", font=("Segoe UI", 13, "bold"), height=2, bg="#e8eef7"
+    # --- Wake-Word --------------------------------------------------------
+    def _start_listener(self) -> None:
+        from .audio.wakeword import WakeWordListener
+
+        self.listener = WakeWordListener(
+            on_utterance=self._on_utterance,
+            on_state=self._on_listener_state,
+            model_name=self.settings.wake_word_model,
+            threshold=self.settings.wake_word_threshold,
         )
-        self.talk_button.pack(fill="x", padx=10, pady=(0, 10))
-        self.talk_button.bind("<ButtonPress-1>", lambda _e: self._start_recording())
-        self.talk_button.bind("<ButtonRelease-1>", lambda _e: self._stop_recording())
-        self.root.bind("<KeyPress-space>", self._space_down)
-        self.root.bind("<KeyRelease-space>", self._space_up)
+        self._status("Lade Wake-Word-Modell …")
+        self.listener.start()
 
-    # --- Push-to-Talk -----------------------------------------------------
-    def _space_down(self, event: tk.Event) -> None:
-        if event.widget is not self.entry and not self.recorder.recording:
-            self._start_recording()
+    def _on_listener_state(self, state: str) -> None:
+        if state == "wake":
+            self._post(self._set_indicator, "#e0442f")
+            self._post(self._log, "System", "Wake-Word erkannt.")
+            try:
+                from .audio.io import play_wav
+                from .audio.wakeword import beep_wav
 
-    def _space_up(self, event: tk.Event) -> None:
-        if event.widget is not self.entry and self.recorder.recording:
-            self._stop_recording()
+                play_wav(beep_wav())
+            except Exception:  # noqa: BLE001
+                log.debug("Bestätigungston fehlgeschlagen", exc_info=True)
+        elif state == "listening":
+            self._post(self._set_indicator, "#3aa655")
+        elif state == "processing":
+            self._post(self._set_indicator, "#e5a50a")
+        elif state.startswith("error:"):
+            self._post(self._log, "System", f"Wake-Word-Erkennung nicht verfügbar: {state[6:]}")
+            self._post(self._set_indicator, "#bbb")
+        text = STATE_TEXT.get(state)
+        if text:
+            self._status(text.format(name=self.name))
 
-    def _start_recording(self) -> None:
-        if self._busy or not self.settings.speech_enabled:
-            if not self.settings.speech_enabled:
-                self._status("Spracherkennung nicht konfiguriert – bitte Text eingeben.")
-            return
-        try:
-            self.recorder.start()
-        except Exception as exc:  # noqa: BLE001
-            self._log("System", f"Mikrofon konnte nicht gestartet werden: {exc}")
-            return
-        self.talk_button.config(bg="#f7c9c9", text="●  Aufnahme … loslassen zum Senden")
-        self._status("Ich höre zu …")
-
-    def _stop_recording(self) -> None:
-        if not self.recorder.recording:
-            return
-        wav = self.recorder.stop()
-        self.talk_button.config(bg="#e8eef7", text="🎙  Halten zum Sprechen")
-        if self.recorder.duration_seconds(wav) < 0.4:
-            self._status("Aufnahme zu kurz.")
-            return
+    def _on_utterance(self, wav: bytes) -> None:
+        """Läuft im Listener-Thread; Verarbeitung in eigenem Thread, Listener bleibt pausiert bis fertig."""
         self._run_in_background(self._process_audio, wav)
+
+    def _toggle_mic(self) -> None:
+        if self.listener is None:
+            return
+        if self.mic_var.get():
+            if not self._busy:
+                self.listener.resume()
+        else:
+            self.listener.pause()
+            self._set_indicator("#bbb")
+            self._status("Mikrofon aus")
+
+    def _set_indicator(self, color: str) -> None:
+        self.indicator.config(fg=color)
 
     # --- Verarbeitung -----------------------------------------------------
     def _send_text(self) -> None:
@@ -101,11 +133,12 @@ class App:
             return
         self.entry.delete(0, "end")
         self._log("Du", text)
+        if self.listener is not None:
+            self.listener.pause()
         self._run_in_background(self._process_text, text)
 
     def _run_in_background(self, target, *args) -> None:  # noqa: ANN001
         self._busy = True
-        self.talk_button.config(state="disabled")
         threading.Thread(target=self._guarded, args=(target, *args), daemon=True).start()
 
     def _guarded(self, target, *args) -> None:  # noqa: ANN001
@@ -128,14 +161,16 @@ class App:
 
     def _process_text(self, text: str) -> None:
         answer = self.assistant.handle_text(text)
-        self._post(self._log, "Assistent", answer)
+        self._post(self._log, self.name, answer)
         self._status("Spreche …")
         self.assistant.speak(answer)
 
     def _done(self) -> None:
         self._busy = False
-        self.talk_button.config(state="normal")
-        self._status("Bereit")
+        if self.listener is not None and self.mic_var.get():
+            self.listener.resume()
+        else:
+            self._status("Bereit")
 
     # --- Thread-sichere UI-Helfer -----------------------------------------
     def _post(self, fn, *args) -> None:  # noqa: ANN001
@@ -179,6 +214,11 @@ class App:
     def _notify(self, message: str) -> None:
         self._post(self._log, "System", message)
         self._post(messagebox.showinfo, "Microsoft-Anmeldung", message)
+
+    def _close(self) -> None:
+        if self.listener is not None:
+            self.listener.stop()
+        self.root.destroy()
 
     def run(self) -> None:
         self.root.mainloop()

@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     ms_client_id: str | None = None
     ms_tenant_id: str = "common"
 
+    # Wake-Word („Hey Jarvis“, lokal per openWakeWord)
+    wake_word_enabled: bool = True
+    wake_word_model: str = "hey_jarvis"
+    wake_word_threshold: float = 0.5
+    assistant_name: str = "Jarvis"
+
+    # Webcam
+    webcam_enabled: bool = True
+    webcam_index: int = 0
+
     # Lokales
     documents_root: Path = Path.home() / "Documents"
     data_dir: Path = DATA_DIR

@@ -10,10 +10,13 @@ dependencies = [
     "pydantic-settings>=2.2",
     "sounddevice>=0.4.6",
     "numpy>=1.26",
+    "openwakeword>=0.6",
+    "onnxruntime>=1.16",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+webcam = ["opencv-python-headless>=4.9"]
 
 [project.scripts]
 sprachassistent = "sprachassistent.__main__:main"

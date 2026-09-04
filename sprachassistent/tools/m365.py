@@ -18,11 +18,20 @@ import msal
 import requests
 
 from .base import Tool, schema
+from .teams import parse_vtt
 
 log = logging.getLogger(__name__)
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-SCOPES = ["User.Read", "Mail.ReadWrite", "Mail.Send", "Calendars.ReadWrite"]
+SCOPES = [
+    "User.Read",
+    "Mail.ReadWrite",
+    "Mail.Send",
+    "Calendars.ReadWrite",
+    "Tasks.ReadWrite",
+    "OnlineMeetings.Read",
+    "OnlineMeetingTranscript.Read.All",
+]
 MAIL_FIELDS = "id,subject,from,toRecipients,receivedDateTime,isRead,flag,bodyPreview,hasAttachments"
 
 Confirm = Callable[[str], bool]
@@ -123,24 +132,28 @@ class M365Tools:
         self.graph = graph
         self.confirm = confirm
         self.tz = ZoneInfo(timezone)
-        self._ids: dict[str, str] = {}
-        self._reverse: dict[str, str] = {}
+        self._ids: dict[str, dict[str, str]] = {}
+        self._reverse: dict[str, dict[str, str]] = {}
         self._folder_cache: dict[str, str] = {}
+        self._task_lists: dict[str, str] = {}
+        self._meeting_urls: dict[str, str] = {}
 
     # --- Kurz-IDs -------------------------------------------------------
-    def _short(self, graph_id: str) -> str:
-        if graph_id in self._reverse:
-            return self._reverse[graph_id]
-        short = f"m{len(self._ids) + 1}"
-        self._ids[short] = graph_id
-        self._reverse[graph_id] = short
+    def _short(self, graph_id: str, prefix: str = "m") -> str:
+        ids = self._ids.setdefault(prefix, {})
+        reverse = self._reverse.setdefault(prefix, {})
+        if graph_id in reverse:
+            return reverse[graph_id]
+        short = f"{prefix}{len(ids) + 1}"
+        ids[short] = graph_id
+        reverse[graph_id] = short
         return short
 
-    def _long(self, short: str) -> str:
+    def _long(self, short: str, prefix: str = "m", hint: str = "mail_search") -> str:
         try:
-            return self._ids[short]
+            return self._ids.get(prefix, {})[short]
         except KeyError:
-            raise KeyError(f"Unbekannte Nachrichten-ID '{short}'. Erst mail_search verwenden.") from None
+            raise KeyError(f"Unbekannte ID '{short}'. Erst {hint} verwenden.") from None
 
     # --- Mail -----------------------------------------------------------
     def _fmt_mail(self, m: dict[str, Any]) -> str:
@@ -253,8 +266,8 @@ class M365Tools:
         dest = self._folder_id(destination_folder, create=create_if_missing)
         moved = self.graph.request("POST", f"/me/messages/{self._long(message_id)}/move", json={"destinationId": dest})
         if moved.get("id"):
-            self._ids[message_id] = moved["id"]
-            self._reverse[moved["id"]] = message_id
+            self._ids["m"][message_id] = moved["id"]
+            self._reverse["m"][moved["id"]] = message_id
         return f"Nachricht {message_id} nach '{destination_folder}' verschoben."
 
     def mail_mark(self, message_id: str, read: bool | None = None, flagged: bool | None = None) -> str:
@@ -322,6 +335,148 @@ class M365Tools:
             event["attendees"] = [{"emailAddress": {"address": a}, "type": "required"} for a in attendees]
         created = self.graph.request("POST", "/me/events", json=event)
         return f"Termin angelegt: {created.get('subject')} am {start}."
+
+    # --- Microsoft To Do --------------------------------------------------
+    def _todo_lists(self) -> list[dict[str, Any]]:
+        return self.graph.request("GET", "/me/todo/lists", params={"$top": 50}).get("value", [])
+
+    def _todo_list_id(self, name: str | None, create: bool = False) -> tuple[str, str]:
+        lists = self._todo_lists()
+        if not name:
+            default = next((l for l in lists if l.get("wellknownListName") == "defaultList"), lists[0] if lists else None)
+            if default is None:
+                raise RuntimeError("Keine To-Do-Liste gefunden.")
+            return default["id"], default["displayName"]
+        key = name.strip().lower()
+        for l in lists:
+            if l["displayName"].lower() == key:
+                return l["id"], l["displayName"]
+        if not create:
+            raise KeyError(f"To-Do-Liste '{name}' nicht gefunden. Vorhandene: " + ", ".join(l["displayName"] for l in lists))
+        created = self.graph.request("POST", "/me/todo/lists", json={"displayName": name.strip()})
+        return created["id"], created["displayName"]
+
+    def _fmt_todo(self, t: dict[str, Any], list_name: str) -> str:
+        due = t.get("dueDateTime", {}).get("dateTime")
+        due_txt = f" fällig {datetime.fromisoformat(due[:19]):%d.%m.%Y}" if due else ""
+        imp = {"high": "hoch", "normal": "mittel", "low": "niedrig"}.get(t.get("importance", "normal"), "mittel")
+        mark = "[x]" if t.get("status") == "completed" else "[ ]"
+        body = " ".join((t.get("body", {}).get("content") or "").split())[:120]
+        body_txt = f" – {body}" if body else ""
+        return f"{mark} {self._short(t['id'], 't')} ({imp}){due_txt}: {t.get('title')}{body_txt}  [Liste: {list_name}]"
+
+    def todo_lists(self) -> str:
+        lists = self._todo_lists()
+        return "To-Do-Listen:\n" + "\n".join(f"- {l['displayName']}" + (" (Standard)" if l.get("wellknownListName") == "defaultList" else "") for l in lists)
+
+    def todo_list(self, list_name: str | None = None, include_completed: bool = False) -> str:
+        list_id, name = self._todo_list_id(list_name)
+        params: dict[str, Any] = {"$top": 100, "$orderby": "createdDateTime desc"}
+        if not include_completed:
+            params["$filter"] = "status ne 'completed'"
+        tasks = self.graph.request("GET", f"/me/todo/lists/{list_id}/tasks", params=params).get("value", [])
+        if not tasks:
+            return f"Keine offenen Aufgaben in '{name}'."
+        tasks.sort(key=lambda t: t.get("dueDateTime", {}).get("dateTime") or "9999")
+        for t in tasks:
+            self._task_lists[self._short(t["id"], "t")] = list_id
+        return f"{len(tasks)} Aufgaben in '{name}':\n" + "\n".join(self._fmt_todo(t, name) for t in tasks)
+
+    def todo_add(
+        self,
+        title: str,
+        due: str | None = None,
+        importance: str = "normal",
+        notes: str | None = None,
+        list_name: str | None = None,
+        reminder: str | None = None,
+    ) -> str:
+        if importance not in ("low", "normal", "high"):
+            raise ValueError("importance muss low, normal oder high sein")
+        list_id, name = self._todo_list_id(list_name, create=True)
+        task: dict[str, Any] = {"title": title.strip(), "importance": importance}
+        if due:
+            task["dueDateTime"] = {"dateTime": f"{due}T00:00:00", "timeZone": self.tz.key}
+        if reminder:
+            task["reminderDateTime"] = {"dateTime": reminder, "timeZone": self.tz.key}
+            task["isReminderOn"] = True
+        if notes:
+            task["body"] = {"content": notes, "contentType": "text"}
+        created = self.graph.request("POST", f"/me/todo/lists/{list_id}/tasks", json=task)
+        self._task_lists[self._short(created["id"], "t")] = list_id
+        return "In Microsoft To Do angelegt:\n" + self._fmt_todo(created, name)
+
+    def todo_update(self, task_id: str, completed: bool | None = None, title: str | None = None, due: str | None = None, delete: bool = False) -> str:
+        graph_id = self._long(task_id, "t", "todo_list")
+        list_id = self._task_lists.get(task_id)
+        if list_id is None:
+            raise KeyError(f"Liste zu Aufgabe {task_id} unbekannt. Erst todo_list aufrufen.")
+        path = f"/me/todo/lists/{list_id}/tasks/{graph_id}"
+        if delete:
+            self.graph.request("DELETE", path)
+            return f"Aufgabe {task_id} gelöscht."
+        patch: dict[str, Any] = {}
+        if completed is not None:
+            patch["status"] = "completed" if completed else "notStarted"
+        if title:
+            patch["title"] = title.strip()
+        if due is not None:
+            patch["dueDateTime"] = {"dateTime": f"{due}T00:00:00", "timeZone": self.tz.key} if due else None
+        if not patch:
+            return "Nichts zu ändern."
+        updated = self.graph.request("PATCH", path, json=patch)
+        return "Aktualisiert:\n" + self._fmt_todo(updated, "")
+
+    # --- Teams-Besprechungen -----------------------------------------------
+    def teams_meetings(self, days_back: int = 7) -> str:
+        end = datetime.now(self.tz)
+        start = end - timedelta(days=max(1, min(days_back, 60)))
+        data = self.graph.request(
+            "GET",
+            "/me/calendarView",
+            params={
+                "startDateTime": start.isoformat(),
+                "endDateTime": end.isoformat(),
+                "$orderby": "start/dateTime desc",
+                "$top": 50,
+                "$select": "subject,start,end,isOnlineMeeting,onlineMeeting,organizer",
+            },
+            headers={"Prefer": f'outlook.timezone="{self.tz.key}"'},
+        )
+        meetings = [e for e in data.get("value", []) if e.get("isOnlineMeeting") and e.get("onlineMeeting", {}).get("joinUrl")]
+        if not meetings:
+            return f"Keine Teams-Besprechungen in den letzten {days_back} Tagen."
+        lines = [f"Teams-Besprechungen der letzten {days_back} Tage (ID | Zeit | Thema):"]
+        for e in meetings:
+            short = self._short(e["onlineMeeting"]["joinUrl"], "mt")
+            self._meeting_urls[short] = e["onlineMeeting"]["joinUrl"]
+            s = datetime.fromisoformat(e["start"]["dateTime"][:19])
+            lines.append(f"{short} | {s:%a %d.%m. %H:%M} | {e.get('subject')}")
+        return "\n".join(lines)
+
+    def teams_transcript(self, meeting_id: str, max_chars: int = 150_000) -> str:
+        join_url = self._long(meeting_id, "mt", "teams_meetings")
+        found = self.graph.request("GET", "/me/onlineMeetings", params={"$filter": f"JoinWebUrl eq '{join_url}'"}).get("value", [])
+        if not found:
+            return "Besprechung in Teams nicht gefunden (nur eigene oder als Teilnehmer besuchte Besprechungen sind abrufbar)."
+        online_id = found[0]["id"]
+        transcripts = self.graph.request("GET", f"/me/onlineMeetings/{online_id}/transcripts").get("value", [])
+        if not transcripts:
+            return "Für diese Besprechung liegt kein Transkript vor. Die Transkription muss in Teams während der Sitzung eingeschaltet sein."
+        transcripts.sort(key=lambda t: t.get("createdDateTime", ""), reverse=True)
+        token = self.graph.token()
+        resp = requests.get(
+            f"{GRAPH}/me/onlineMeetings/{online_id}/transcripts/{transcripts[0]['id']}/content",
+            params={"$format": "text/vtt"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=120,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Transkript konnte nicht geladen werden ({resp.status_code}): {resp.text[:300]}")
+        text = parse_vtt(resp.text)
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n... [gekürzt, {len(text)} Zeichen gesamt]"
+        return f"Transkript ({len(text)} Zeichen):\n{text}"
 
 
 def build_tools(m: M365Tools) -> list[Tool]:
@@ -425,5 +580,66 @@ def build_tools(m: M365Tools) -> list[Tool]:
                 ["subject", "start", "end"],
             ),
             handler=m.calendar_create_event,
+        ),
+        Tool(
+            name="todo_lists",
+            description="Zeigt die Listen in Microsoft To Do.",
+            input_schema=schema({}),
+            handler=m.todo_lists,
+        ),
+        Tool(
+            name="todo_list",
+            description="Zeigt Aufgaben aus Microsoft To Do (Standardliste oder benannte Liste) mit Kurz-IDs (t1, t2 ...).",
+            input_schema=schema({"list_name": {"type": "string"}, "include_completed": {"type": "boolean"}}),
+            handler=m.todo_list,
+        ),
+        Tool(
+            name="todo_add",
+            description=(
+                "Legt eine Aufgabe in Microsoft To Do an. Fehlende Listen werden angelegt. "
+                "due als YYYY-MM-DD, reminder als lokale Zeit YYYY-MM-DDTHH:MM:SS."
+            ),
+            input_schema=schema(
+                {
+                    "title": {"type": "string"},
+                    "due": {"type": "string"},
+                    "importance": {"type": "string", "enum": ["low", "normal", "high"]},
+                    "notes": {"type": "string"},
+                    "list_name": {"type": "string", "description": "Leer = Standardliste 'Aufgaben'"},
+                    "reminder": {"type": "string"},
+                },
+                ["title"],
+            ),
+            handler=m.todo_add,
+        ),
+        Tool(
+            name="todo_update",
+            description="Erledigt (completed=true), ändert oder löscht eine To-Do-Aufgabe anhand ihrer Kurz-ID aus todo_list/todo_add.",
+            input_schema=schema(
+                {
+                    "task_id": {"type": "string"},
+                    "completed": {"type": "boolean"},
+                    "title": {"type": "string"},
+                    "due": {"type": "string", "description": "YYYY-MM-DD, leer entfernt die Fälligkeit"},
+                    "delete": {"type": "boolean"},
+                },
+                ["task_id"],
+            ),
+            handler=m.todo_update,
+        ),
+        Tool(
+            name="teams_meetings",
+            description="Listet vergangene Teams-Besprechungen aus dem Kalender mit Kurz-IDs (mt1, mt2 ...).",
+            input_schema=schema({"days_back": {"type": "integer", "description": "Standard 7, max 60"}}),
+            handler=m.teams_meetings,
+        ),
+        Tool(
+            name="teams_transcript",
+            description=(
+                "Lädt das Transkript einer Teams-Besprechung als Text (Sprecher: Aussage). Danach zusammenfassen: "
+                "Ergebnisse, Entscheidungen, offene Punkte des Nutzers."
+            ),
+            input_schema=schema({"meeting_id": {"type": "string"}, "max_chars": {"type": "integer"}}, ["meeting_id"]),
+            handler=m.teams_transcript,
         ),
     ]

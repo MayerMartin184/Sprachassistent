@@ -11,7 +11,7 @@ import anthropic
 
 from ..config import Settings
 from ..tools.base import ToolRegistry
-from .prompts import SYSTEM_PROMPT
+from .prompts import system_prompt
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class Agent:
         now = datetime.now(self.tz)
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
         return [
-            {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": system_prompt(self.settings.assistant_name), "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": f"Aktuell: {weekday}, {now:%d.%m.%Y %H:%M} ({self.tz.key})."},
         ]
 
@@ -99,7 +99,8 @@ class Agent:
             for block in tool_uses:
                 self.on_status(f"Werkzeug: {block.name}")
                 content, is_error = self.registry.execute(block.name, dict(block.input))
-                log.info("Werkzeug %s -> %s%s", block.name, "FEHLER: " if is_error else "", content[:200])
+                preview = content[:200] if isinstance(content, str) else f"{len(content)} Inhaltsblöcke"
+                log.info("Werkzeug %s -> %s%s", block.name, "FEHLER: " if is_error else "", preview)
                 result: dict[str, Any] = {"type": "tool_result", "tool_use_id": block.id, "content": content}
                 if is_error:
                     result["is_error"] = True

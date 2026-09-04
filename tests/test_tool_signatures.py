@@ -31,3 +31,18 @@ def test_m365_tool_signatures():
 def test_html_to_text():
     html = "<html><style>x{}</style><body><p>Hallo <b>Welt</b></p><div>Zeile 2</div></body></html>"
     assert m365.html_to_text(html) == "Hallo Welt\nZeile 2"
+
+
+def test_webcam_tool_signature():
+    from sprachassistent.tools import webcam
+
+    _check(webcam.build_tools(0))
+
+
+def test_registry_passes_content_blocks_through():
+    from sprachassistent.tools.base import Tool, ToolRegistry, schema
+
+    blocks = [{"type": "text", "text": "hi"}]
+    reg = ToolRegistry()
+    reg.register(Tool("img", "liefert Blöcke", schema({}), lambda: blocks))
+    assert reg.execute("img", {}) == (blocks, False)

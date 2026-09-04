@@ -9,7 +9,8 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
-Handler = Callable[..., str]
+Handler = Callable[..., Any]
+ToolResult = str | list[dict[str, Any]]
 
 
 @dataclass
@@ -47,13 +48,15 @@ class ToolRegistry:
     def definitions(self) -> list[dict[str, Any]]:
         return [tool.to_api() for tool in self._tools.values()]
 
-    def execute(self, name: str, tool_input: dict[str, Any]) -> tuple[str, bool]:
-        """Führt ein Werkzeug aus. Rückgabe: (Ergebnistext, is_error)."""
+    def execute(self, name: str, tool_input: dict[str, Any]) -> tuple[ToolResult, bool]:
+        """Führt ein Werkzeug aus. Rückgabe: (Ergebnis als Text oder Inhaltsblöcke, is_error)."""
         tool = self._tools.get(name)
         if tool is None:
             return f"Unbekanntes Werkzeug: {name}", True
         try:
             result = tool.handler(**tool_input)
+            if isinstance(result, list):
+                return result, False
             if not isinstance(result, str):
                 result = json.dumps(result, ensure_ascii=False, default=str)
             return result, False
