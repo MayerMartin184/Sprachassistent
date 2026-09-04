@@ -76,6 +76,8 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 | `WAKE_WORD_ENABLED`, `WAKE_WORD_MODEL`, `WAKE_WORD_THRESHOLD` | nein | Standard `true`, `hey_jarvis`, `0.5` |
 | `ASSISTANT_NAME` | nein | Anredename, Standard `Jarvis` |
 | `WEBCAM_ENABLED`, `WEBCAM_INDEX` | nein | Standard `true`, `0` |
+| `BRAND_BG`, `BRAND_PANEL`, `BRAND_PRIMARY`, `BRAND_ACCENT`, `BRAND_TEXT`, `BRAND_MUTED` | nein | Hex-Farben der Oberfläche (Firmen-CI) |
+| `BRAND_FONT`, `BRAND_TITLE`, `LOGO_PATH` | nein | Schriftart, Untertitel im Kopf, PNG-Logo |
 | `MS_CLIENT_ID`, `MS_TENANT_ID` | für Microsoft 365 | Ohne `MS_CLIENT_ID` laufen Aufgaben lokal, Mail/Kalender/Teams sind aus |
 | `DOCUMENTS_ROOT` | nein | Ablageordner, Standard `~/Documents` |
 | `TIMEZONE` | nein | Standard `Europe/Berlin` |

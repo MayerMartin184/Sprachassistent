@@ -89,6 +89,7 @@ class WakeWordListener:
         self._paused = threading.Event()
         self._thread: threading.Thread | None = None
         self._noise = 200.0
+        self.level = 0.0  # 0..1, aktueller Mikrofonpegel für die Visualisierung
 
     # --- Steuerung ------------------------------------------------------------
     def start(self) -> None:
@@ -152,6 +153,7 @@ class WakeWordListener:
                         model.reset()
                         self.on_state("listening")
                     level = rms(frame)
+                    self.level = max(0.0, min(1.0, (level - self._noise) / max(self._noise * 6.0, 1500.0)))
 
                     if segment is None:
                         self._noise = 0.97 * self._noise + 0.03 * level

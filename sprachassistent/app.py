@@ -1,12 +1,17 @@
-"""Desktop-Fenster: pulsierender Zustandskreis, Verlauf, Texteingabe, Mikrofon-Schalter, Bestätigungsdialoge."""
+"""Desktop-Fenster im futuristischen Stil: animierte Audio-Wellenlinien, Verlauf, Eingabe, Dialoge.
+
+Farben, Schrift und Logo kommen aus den Einstellungen (BRAND_*), damit die Firmen-CI ohne Codeänderung passt.
+"""
 
 from __future__ import annotations
 
 import logging
 import math
 import queue
+import random
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import messagebox
 
@@ -15,36 +20,32 @@ from .config import Settings
 
 log = logging.getLogger(__name__)
 
-BG = "#12141a"
-PANEL = "#1b1e27"
-FG = "#e6e8ee"
-MUTED = "#8b91a1"
-COLORS = {
-    "idle": "#4a4f5c",
-    "listening": "#3aa655",
-    "wake": "#e0442f",
-    "processing": "#e5a50a",
-    "speaking": "#3d8bfd",
-}
 STATE_TEXT = {
-    "idle": "Bereit – unten Text eingeben",
-    "listening": "Sag „Hey {name}“",
-    "wake": "Ich höre …",
-    "processing": "Ich arbeite …",
-    "speaking": "Ich spreche …",
+    "idle": "BEREIT",
+    "listening": "SAG „HEY {name}“",
+    "wake": "ICH HÖRE",
+    "processing": "ICH ARBEITE",
+    "speaking": "ICH SPRECHE",
 }
-FONT = "Segoe UI"
+WAVE_W, WAVE_H = 700, 150
+
+
+def _mix(c1: str, c2: str, t: float) -> str:
+    """Mischt zwei Hex-Farben (t=0 -> c1, t=1 -> c2)."""
+    a = [int(c1[i : i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i : i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
 
 
 class App:
     def __init__(self, settings: Settings) -> None:
-        self.settings = settings
+        self.s = settings
         self.name = settings.assistant_name
         self.root = tk.Tk()
-        self.root.title(self.name)
-        self.root.configure(bg=BG)
-        self.root.geometry("820x640")
-        self.root.minsize(600, 460)
+        self.root.title(f"{self.name} – {settings.brand_title}")
+        self.root.configure(bg=settings.brand_bg)
+        self.root.geometry("900x680")
+        self.root.minsize(680, 520)
         icon = Path(__file__).with_name("jarvis.ico")
         if icon.exists():
             try:
@@ -52,10 +53,13 @@ class App:
             except tk.TclError:
                 pass
 
+        self.font = settings.brand_font if settings.brand_font in tkfont.families() else "Segoe UI"
         self._ui_queue: queue.Queue = queue.Queue()
         self._busy = False
         self._state = "idle"
-        self._phase = 0.0
+        self._t = 0.0
+        self._amp = 0.05  # geglättete Amplitude 0..1
+        self._logo_img = None
         self.listener = None
 
         self._build_widgets()
@@ -64,98 +68,139 @@ class App:
 
         if settings.speech_enabled and settings.wake_word_enabled:
             self._start_listener()
-        elif settings.speech_enabled:
-            self._log("System", "Wake-Word deaktiviert (WAKE_WORD_ENABLED=false) – Eingabe per Text.")
-            self._set_state("idle")
         else:
-            self._log("System", "Sprache nicht eingerichtet (AZURE_SPEECH_KEY/REGION fehlen) – Eingabe per Text.")
-            self.mic_var.set(False)
-            self.mic_check.config(state="disabled")
+            if settings.speech_enabled:
+                self._log("System", "Wake-Word deaktiviert (WAKE_WORD_ENABLED=false) – Eingabe per Text.")
+            else:
+                self._log("System", "Sprache nicht eingerichtet (AZURE_SPEECH_KEY/REGION fehlen) – Eingabe per Text.")
+                self.mic_var.set(False)
+                self.mic_check.config(state="disabled")
             self._set_state("idle")
         self.root.after(100, self._drain_queue)
-        self.root.after(40, self._animate)
+        self.root.after(30, self._animate)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
     # --- Aufbau -----------------------------------------------------------
     def _build_widgets(self) -> None:
-        head = tk.Frame(self.root, bg=BG)
-        head.pack(fill="x", padx=18, pady=(14, 0))
-        tk.Label(head, text=self.name, font=(FONT, 20, "bold"), bg=BG, fg=FG).pack(side="left")
+        s, f = self.s, self.font
+        head = tk.Frame(self.root, bg=s.brand_bg)
+        head.pack(fill="x", padx=28, pady=(18, 0))
+        if s.logo_path and Path(s.logo_path).exists():
+            try:
+                img = tk.PhotoImage(file=str(s.logo_path))
+                factor = max(1, math.ceil(img.height() / 44))
+                self._logo_img = img.subsample(factor, factor)
+                tk.Label(head, image=self._logo_img, bg=s.brand_bg).pack(side="left", padx=(0, 14))
+            except tk.TclError:
+                log.warning("Logo konnte nicht geladen werden: %s", s.logo_path)
+        title = tk.Frame(head, bg=s.brand_bg)
+        title.pack(side="left")
+        tk.Label(title, text=self.name.upper(), font=(f, 22, "bold"), bg=s.brand_bg, fg=s.brand_text).pack(anchor="w")
+        tk.Label(title, text=s.brand_title.upper(), font=(f, 8), bg=s.brand_bg, fg=s.brand_primary).pack(anchor="w")
+
         self.mic_var = tk.BooleanVar(value=True)
         self.mic_check = tk.Checkbutton(
-            head, text="Mikrofon", variable=self.mic_var, command=self._toggle_mic,
-            bg=BG, fg=FG, activebackground=BG, activeforeground=FG, selectcolor=PANEL, font=(FONT, 10),
+            head, text="MIKROFON", variable=self.mic_var, command=self._toggle_mic, font=(f, 8),
+            bg=s.brand_bg, fg=s.brand_muted, activebackground=s.brand_bg, activeforeground=s.brand_text,
+            selectcolor=s.brand_panel, bd=0, highlightthickness=0,
         )
         self.mic_check.pack(side="right")
 
-        self.canvas = tk.Canvas(self.root, width=160, height=160, bg=BG, highlightthickness=0)
-        self.canvas.pack(pady=(6, 0))
-        self._halo = self.canvas.create_oval(30, 30, 130, 130, fill="", outline=COLORS["idle"], width=2)
-        self._orb = self.canvas.create_oval(50, 50, 110, 110, fill=COLORS["idle"], outline="")
+        # Wellen-Visualisierung
+        self.canvas = tk.Canvas(self.root, width=WAVE_W, height=WAVE_H, bg=s.brand_bg, highlightthickness=0)
+        self.canvas.pack(pady=(10, 0))
+        mid = WAVE_H / 2
+        self.canvas.create_line(0, mid, WAVE_W, mid, fill=_mix(s.brand_bg, s.brand_primary, 0.15), width=1)
+        self._lines = []
+        for spec in self._line_specs():
+            self._lines.append(self.canvas.create_line(0, mid, WAVE_W, mid, fill=spec["color"], width=spec["width"], smooth=True))
+        self.status_var = tk.StringVar(value="STARTE")
+        tk.Label(self.root, textvariable=self.status_var, font=(f, 10, "bold"), bg=s.brand_bg, fg=s.brand_primary).pack(pady=(2, 10))
+        tk.Frame(self.root, bg=_mix(s.brand_bg, s.brand_primary, 0.35), height=1).pack(fill="x", padx=28)
 
-        self.status_var = tk.StringVar(value="Starte …")
-        tk.Label(self.root, textvariable=self.status_var, font=(FONT, 12), bg=BG, fg=MUTED).pack(pady=(0, 8))
-
-        row = tk.Frame(self.root, bg=BG)
-        row.pack(side="bottom", fill="x", padx=18, pady=(0, 16))
+        # Eingabe unten (zuerst packen, damit sie immer sichtbar bleibt)
+        row = tk.Frame(self.root, bg=s.brand_bg)
+        row.pack(side="bottom", fill="x", padx=28, pady=(0, 18))
         self.entry = tk.Entry(
-            row, font=(FONT, 12), bg=PANEL, fg=FG, insertbackground=FG, relief="flat", highlightthickness=1,
-            highlightbackground="#2a2e3a", highlightcolor="#3d8bfd",
+            row, font=(f, 12), bg=s.brand_panel, fg=s.brand_text, insertbackground=s.brand_primary, relief="flat",
+            highlightthickness=1, highlightbackground=_mix(s.brand_panel, s.brand_primary, 0.35), highlightcolor=s.brand_primary,
         )
-        self.entry.pack(side="left", fill="x", expand=True, ipady=8)
+        self.entry.pack(side="left", fill="x", expand=True, ipady=9)
         self.entry.bind("<Return>", lambda _e: self._send_text())
         tk.Button(
-            row, text="Senden", command=self._send_text, font=(FONT, 11, "bold"), bg="#3d8bfd", fg="white",
-            activebackground="#2f6fd0", activeforeground="white", relief="flat", padx=16,
-        ).pack(side="left", padx=(8, 0), ipady=6)
+            row, text="SENDEN", command=self._send_text, font=(f, 10, "bold"), bg=s.brand_primary, fg=s.brand_bg,
+            activebackground=s.brand_accent, activeforeground=s.brand_text, relief="flat", padx=18, bd=0,
+        ).pack(side="left", padx=(10, 0), ipady=7)
 
-        frame = tk.Frame(self.root, bg=PANEL, bd=0, highlightthickness=0)
-        frame.pack(side="top", fill="both", expand=True, padx=18, pady=(0, 10))
+        # Verlauf
+        frame = tk.Frame(self.root, bg=s.brand_bg)
+        frame.pack(side="top", fill="both", expand=True, padx=28, pady=(12, 12))
         self.transcript = tk.Text(
-            frame, wrap="word", state="disabled", font=(FONT, 11), bg=PANEL, fg=FG, height=6,
-            insertbackground=FG, relief="flat", padx=12, pady=10, spacing3=6,
+            frame, wrap="word", state="disabled", font=(f, 11), bg=s.brand_bg, fg=s.brand_text, height=6,
+            relief="flat", padx=4, pady=4, spacing1=4, spacing3=10, highlightthickness=0, bd=0, cursor="arrow",
         )
-        scroll = tk.Scrollbar(frame, command=self.transcript.yview)
+        scroll = tk.Scrollbar(frame, command=self.transcript.yview, bg=s.brand_panel, troughcolor=s.brand_bg, bd=0)
         self.transcript.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         self.transcript.pack(side="left", fill="both", expand=True)
-        self.transcript.tag_config("Du", foreground="#7fb4ff", font=(FONT, 11, "bold"))
-        self.transcript.tag_config(self.name, foreground="#6fd38a", font=(FONT, 11, "bold"))
-        self.transcript.tag_config("System", foreground=MUTED, font=(FONT, 10, "italic"))
-
+        self.transcript.tag_config("Du", foreground=s.brand_accent, font=(f, 9, "bold"), spacing1=8)
+        self.transcript.tag_config(self.name, foreground=s.brand_primary, font=(f, 9, "bold"), spacing1=8)
+        self.transcript.tag_config("System", foreground=s.brand_muted, font=(f, 9, "bold"), spacing1=8)
+        self.transcript.tag_config("body", foreground=s.brand_text, font=(f, 11), lmargin1=2, lmargin2=2)
+        self.transcript.tag_config("body_system", foreground=s.brand_muted, font=(f, 10), lmargin1=2, lmargin2=2)
         self.entry.focus_set()
 
-    # --- Zustandskreis ----------------------------------------------------
-    def _set_state(self, state: str) -> None:
-        self._state = state
-        text = STATE_TEXT.get(state)
-        if text:
-            self.status_var.set(text.format(name=self.name))
+    def _line_specs(self) -> list[dict]:
+        s = self.s
+        return [
+            {"color": _mix(s.brand_bg, s.brand_accent, 0.55), "width": 1.5, "freq": 1.6, "speed": 1.1, "phase": 2.1, "gain": 0.7},
+            {"color": _mix(s.brand_bg, s.brand_primary, 0.6), "width": 2, "freq": 2.3, "speed": 1.7, "phase": 0.7, "gain": 0.85},
+            {"color": s.brand_primary, "width": 2.5, "freq": 3.1, "speed": 2.3, "phase": 0.0, "gain": 1.0},
+        ]
+
+    # --- Animation --------------------------------------------------------
+    def _target_amp(self) -> float:
+        if self._state in ("wake",) and self.listener is not None:
+            return 0.15 + 0.85 * self.listener.level
+        if self._state == "listening" and self.listener is not None:
+            return 0.06 + 0.35 * self.listener.level
+        if self._state == "speaking":
+            return 0.35 + 0.45 * abs(math.sin(self._t * 3.7) * math.sin(self._t * 1.3)) + random.uniform(-0.05, 0.05)
+        if self._state == "processing":
+            return 0.18 + 0.08 * math.sin(self._t * 4)
+        return 0.06
 
     def _animate(self) -> None:
-        speed = {"idle": 0.0, "listening": 0.05, "wake": 0.18, "processing": 0.12, "speaking": 0.10}[self._state]
-        self._phase += speed
-        pulse = (math.sin(self._phase) + 1) / 2  # 0..1
-        r = 30 + 6 * pulse
-        hr = 42 + 14 * pulse
-        color = COLORS[self._state]
-        self.canvas.coords(self._orb, 80 - r, 80 - r, 80 + r, 80 + r)
-        self.canvas.coords(self._halo, 80 - hr, 80 - hr, 80 + hr, 80 + hr)
-        self.canvas.itemconfig(self._orb, fill=color)
-        self.canvas.itemconfig(self._halo, outline=color)
-        self.root.after(40, self._animate)
+        self._t += 0.03
+        target = max(0.02, min(1.0, self._target_amp()))
+        self._amp += (target - self._amp) * (0.35 if target > self._amp else 0.12)
+        mid, n = WAVE_H / 2, 90
+        for item, spec in zip(self._lines, self._line_specs()):
+            pts = []
+            for i in range(n + 1):
+                x = i / n
+                env = math.sin(math.pi * x) ** 1.5  # Ränder auslaufen lassen
+                y = math.sin(x * spec["freq"] * 2 * math.pi + self._t * spec["speed"] * 2 + spec["phase"])
+                y *= 0.55 + 0.45 * math.sin(x * 7 + self._t * 0.9 + spec["phase"])
+                pts += [x * WAVE_W, mid + y * env * self._amp * spec["gain"] * (WAVE_H / 2 - 6)]
+            self.canvas.coords(item, *pts)
+        color = {"idle": self.s.brand_muted, "wake": self.s.brand_accent}.get(self._state, self.s.brand_primary)
+        self.canvas.itemconfig(self._lines[-1], fill=color)
+        self.root.after(30, self._animate)
+
+    def _set_state(self, state: str) -> None:
+        self._state = state
+        self.status_var.set(STATE_TEXT[state].format(name=self.name.upper()))
 
     # --- Wake-Word --------------------------------------------------------
     def _start_listener(self) -> None:
         from .audio.wakeword import WakeWordListener
 
         self.listener = WakeWordListener(
-            on_utterance=self._on_utterance,
-            on_state=self._on_listener_state,
-            model_name=self.settings.wake_word_model,
-            threshold=self.settings.wake_word_threshold,
+            on_utterance=self._on_utterance, on_state=self._on_listener_state,
+            model_name=self.s.wake_word_model, threshold=self.s.wake_word_threshold,
         )
-        self.status_var.set("Lade Wake-Word-Modell …")
+        self.status_var.set("LADE WAKE-WORD-MODELL")
         self.listener.start()
 
     def _on_listener_state(self, state: str) -> None:
@@ -168,10 +213,8 @@ class App:
                 play_wav(beep_wav())
             except Exception:  # noqa: BLE001
                 log.debug("Bestätigungston fehlgeschlagen", exc_info=True)
-        elif state == "listening":
-            self._post(self._set_state, "listening")
-        elif state == "processing":
-            self._post(self._set_state, "processing")
+        elif state in ("listening", "processing"):
+            self._post(self._set_state, state)
         elif state.startswith("error:"):
             self._post(self._log, "System", f"Wake-Word-Erkennung nicht verfügbar: {state[6:]}")
             self._post(self._set_state, "idle")
@@ -215,7 +258,7 @@ class App:
             self._post(self._done)
 
     def _process_audio(self, wav: bytes) -> None:
-        self._status("Erkenne Sprache …")
+        self._status("ERKENNE SPRACHE")
         text = self.assistant.transcribe(wav)
         if not text:
             self._post(self._log, "System", "Nichts verstanden.")
@@ -235,7 +278,6 @@ class App:
             self.listener.resume()
         else:
             self._set_state("idle")
-            self.status_var.set("Bereit – Text eingeben")
 
     # --- Thread-sichere UI-Helfer -----------------------------------------
     def _post(self, fn, *args) -> None:  # noqa: ANN001
@@ -251,6 +293,7 @@ class App:
         self.root.after(100, self._drain_queue)
 
     def _status(self, text: str) -> None:
+        text = text.upper().rstrip(" …")
         if threading.current_thread() is threading.main_thread():
             self.status_var.set(text)
         else:
@@ -258,8 +301,8 @@ class App:
 
     def _log(self, who: str, text: str) -> None:
         self.transcript.config(state="normal")
-        self.transcript.insert("end", f"{who}: ", who)
-        self.transcript.insert("end", text.strip() + "\n\n")
+        self.transcript.insert("end", f"{who.upper()}\n", who)
+        self.transcript.insert("end", text.strip() + "\n", "body_system" if who == "System" else "body")
         self.transcript.config(state="disabled")
         self.transcript.see("end")
 

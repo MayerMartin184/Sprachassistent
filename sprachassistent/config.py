@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     wake_word_threshold: float = 0.5
     assistant_name: str = "Jarvis"
 
+    # Design (Hex-Farben; an die Firmen-CI anpassen)
+    brand_bg: str = "#070b12"
+    brand_panel: str = "#0e1523"
+    brand_primary: str = "#19c6ff"
+    brand_accent: str = "#7b5cff"
+    brand_text: str = "#e8f1ff"
+    brand_muted: str = "#6f7f99"
+    brand_font: str = "Segoe UI"
+    brand_title: str = "ME-Concept Assistant"
+    logo_path: Path | None = None  # PNG, wird oben links angezeigt
+
     # Webcam
     webcam_enabled: bool = True
     webcam_index: int = 0
@@ -49,7 +60,7 @@ class Settings(BaseSettings):
     data_dir: Path = DATA_DIR
     timezone: str = "Europe/Berlin"
 
-    @field_validator("documents_root", "data_dir", mode="before")
+    @field_validator("documents_root", "data_dir", "logo_path", mode="before")
     @classmethod
     def _expand(cls, value: object) -> object:
         if isinstance(value, str):
