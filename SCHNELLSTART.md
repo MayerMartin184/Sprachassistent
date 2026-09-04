@@ -19,9 +19,16 @@ Alternativ mit Git: `git clone -b claude/voice-controlled-task-assistant-li2q6c 
 1. https://www.python.org/downloads/ -> „Download Python 3.12“ (oder neuer).
 2. Beim Installer **„Add python.exe to PATH“ anhaken**, dann „Install Now“.
 
-## 3. Jarvis installieren
+## 3. Jarvis installieren (ein Doppelklick)
 
-Eingabeaufforderung öffnen (Windows-Taste, `cmd` tippen, Enter) und nacheinander eingeben:
+Im Ordner `C:\Jarvis` die Datei **`Installieren.bat`** doppelklicken. Ein schwarzes Fenster zeigt den
+Fortschritt; das dauert einige Minuten. Am Ende liegt auf dem Desktop eine Verknüpfung **„Jarvis“**,
+und die Datei `.env` öffnet sich im Editor für Schritt 4.
+
+Falls Windows warnt („Der Computer wurde durch Windows geschützt“): „Weitere Informationen“ und
+„Trotzdem ausführen“. Die Datei enthält nur die Befehle aus diesem Abschnitt.
+
+Wer es lieber von Hand macht, Eingabeaufforderung (Windows-Taste, `cmd`, Enter):
 
 ```
 cd C:\Jarvis
@@ -147,21 +154,19 @@ TIMEZONE=Europe/Berlin
 
 ## 5. Starten
 
-```
-cd C:\Jarvis
-.venv\Scripts\activate
-python -m sprachassistent
-```
+Doppelklick auf **„Jarvis“** auf dem Desktop (oder auf `Jarvis.bat` im Ordner). Es öffnet sich das
+Jarvis-Fenster ohne schwarze Konsole.
 
-Es öffnet sich ein Fenster. Ein grüner Punkt heißt: Jarvis wartet auf „Hey Jarvis“. Rot: er nimmt
-auf. Gelb: er arbeitet. Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microsoft.
+Der Kreis in der Mitte zeigt den Zustand: **grün** wartet auf „Hey Jarvis“, **rot** nimmt auf,
+**gelb** arbeitet, **blau** spricht, **grau** Mikrofon aus. Unten kannst du jederzeit auch tippen.
+Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microsoft.
 
-Ohne Mikrofon oder zum Ausprobieren: unten Text eintippen und Enter drücken, oder
-`python -m sprachassistent --cli` für den Terminal-Modus.
+Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
+Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
 ## Wenn etwas nicht geht
 
-- **„ANTHROPIC_API_KEY prüfen“**: Schlüssel in `.env` falsch oder Datei nicht gespeichert.
+- **„Der Claude-API-Schlüssel fehlt“**: `.env` liegt nicht direkt in `C:\Jarvis`, wurde nicht gespeichert, oder der Schlüssel steht nicht rechts vom `=`. Die Datei darf auch `.env.txt` heißen.
 - **Kein Ton / kein Mikrofon**: In den Windows-Einstellungen unter Datenschutz den Mikrofonzugriff für Desktop-Apps erlauben.
 - **Wake-Word reagiert nicht**: `WAKE_WORD_THRESHOLD=0.4` in `.env` eintragen; „Hey Jarvis“ englisch aussprechen („Dschárwis“).
 - **Wake-Word löst zu oft aus**: `WAKE_WORD_THRESHOLD=0.65`.

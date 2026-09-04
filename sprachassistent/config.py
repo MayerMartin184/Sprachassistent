@@ -12,7 +12,8 @@ DATA_DIR = Path.home() / ".sprachassistent"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", str(DATA_DIR / ".env")),
+        # .env.txt: Windows-Editor hängt beim Speichern gern ".txt" an
+        env_file=(".env", ".env.txt", str(DATA_DIR / ".env")),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -71,7 +72,24 @@ class Settings(BaseSettings):
         return bool(self.ms_client_id)
 
 
+class ConfigError(RuntimeError):
+    """Fehlende oder ungültige Konfiguration, verständlich für den Nutzer formuliert."""
+
+
 def load_settings() -> Settings:
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     return settings
+
+
+def check_required(settings: Settings) -> None:
+    import os
+
+    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    if not key or key.startswith("sk-ant-...") or "hier" in key.lower():
+        raise ConfigError(
+            "Der Claude-API-Schlüssel fehlt.\n\n"
+            f"Bitte die Datei .env im Programmordner ({Path.cwd()}) öffnen und in der Zeile\n"
+            "ANTHROPIC_API_KEY=... deinen Schlüssel eintragen.\n\n"
+            "Hinweis: Die Datei muss genau .env heißen (auch .env.txt wird akzeptiert)."
+        )

@@ -23,7 +23,9 @@ To Do, Mail, Kalender und Teams.
 ```
 sprachassistent/
   __main__.py        Einstieg (Fenster / --cli)
-  app.py             Fenster: Zustandsanzeige, Verlauf, Texteingabe, Mikrofon-Schalter, Dialoge
+  app.py             Fenster: pulsierender Zustandskreis, Verlauf, Texteingabe, Mikrofon-Schalter
+Installieren.bat     Windows: Einrichtung per Doppelklick + Desktop-Verknüpfung
+Jarvis.bat           Windows: Start ohne Konsolenfenster
   assistant.py       Verdrahtung Einstellungen -> Werkzeuge -> Agent -> Sprache
   config.py          Einstellungen aus .env / Umgebungsvariablen
   agent/agent.py     Claude-Werkzeugschleife (eigene Werkzeuge + web_search/web_fetch)
@@ -47,6 +49,11 @@ arbeitet, ist das Wake-Word stumm geschaltet. Der Mikrofon-Schalter im Fenster s
 ## Installation
 
 Voraussetzung: Python 3.10 oder neuer.
+
+**Windows, ohne Kommandozeile:** `Installieren.bat` doppelklicken (richtet alles ein und legt eine
+Desktop-Verknüpfung an), danach `Jarvis.bat` bzw. die Verknüpfung „Jarvis“ zum Starten.
+
+**Manuell:**
 
 ```bash
 python -m venv .venv

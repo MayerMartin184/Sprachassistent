@@ -72,6 +72,11 @@ class Agent:
         except anthropic.APIConnectionError:
             del self.history[start:]
             return "Keine Verbindung zur Claude-API. Bitte Internetverbindung prüfen."
+        except TypeError as exc:
+            if "authentication" not in str(exc).lower():
+                raise
+            del self.history[start:]
+            return "Der Claude-API-Schlüssel fehlt. Bitte ANTHROPIC_API_KEY in der Datei .env eintragen."
 
     def _loop(self) -> str:
         for _ in range(self.settings.max_tool_rounds):
