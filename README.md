@@ -26,6 +26,7 @@ sprachassistent/
   app.py             Fenster: pulsierender Zustandskreis, Verlauf, Texteingabe, Mikrofon-Schalter
 Installieren.bat     Windows: Einrichtung per Doppelklick + Desktop-Verknüpfung
 Jarvis.bat           Windows: Start ohne Konsolenfenster
+Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erhalten
   assistant.py       Verdrahtung Einstellungen -> Werkzeuge -> Agent -> Sprache
   config.py          Einstellungen aus .env / Umgebungsvariablen
   agent/agent.py     Claude-Werkzeugschleife (eigene Werkzeuge + web_search/web_fetch)

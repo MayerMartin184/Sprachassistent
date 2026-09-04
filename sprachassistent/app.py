@@ -27,7 +27,7 @@ COLORS = {
     "speaking": "#3d8bfd",
 }
 STATE_TEXT = {
-    "idle": "Mikrofon aus – Text eingeben",
+    "idle": "Bereit – unten Text eingeben",
     "listening": "Sag „Hey {name}“",
     "wake": "Ich höre …",
     "processing": "Ich arbeite …",
@@ -66,9 +66,12 @@ class App:
             self._start_listener()
         elif settings.speech_enabled:
             self._log("System", "Wake-Word deaktiviert (WAKE_WORD_ENABLED=false) – Eingabe per Text.")
+            self._set_state("idle")
         else:
             self._log("System", "Sprache nicht eingerichtet (AZURE_SPEECH_KEY/REGION fehlen) – Eingabe per Text.")
+            self.mic_var.set(False)
             self.mic_check.config(state="disabled")
+            self._set_state("idle")
         self.root.after(100, self._drain_queue)
         self.root.after(40, self._animate)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
@@ -93,22 +96,8 @@ class App:
         self.status_var = tk.StringVar(value="Starte …")
         tk.Label(self.root, textvariable=self.status_var, font=(FONT, 12), bg=BG, fg=MUTED).pack(pady=(0, 8))
 
-        frame = tk.Frame(self.root, bg=PANEL, bd=0, highlightthickness=0)
-        frame.pack(fill="both", expand=True, padx=18, pady=(0, 10))
-        self.transcript = tk.Text(
-            frame, wrap="word", state="disabled", font=(FONT, 11), bg=PANEL, fg=FG,
-            insertbackground=FG, relief="flat", padx=12, pady=10, spacing3=6,
-        )
-        scroll = tk.Scrollbar(frame, command=self.transcript.yview)
-        self.transcript.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
-        self.transcript.pack(side="left", fill="both", expand=True)
-        self.transcript.tag_config("Du", foreground="#7fb4ff", font=(FONT, 11, "bold"))
-        self.transcript.tag_config(self.name, foreground="#6fd38a", font=(FONT, 11, "bold"))
-        self.transcript.tag_config("System", foreground=MUTED, font=(FONT, 10, "italic"))
-
         row = tk.Frame(self.root, bg=BG)
-        row.pack(fill="x", padx=18, pady=(0, 16))
+        row.pack(side="bottom", fill="x", padx=18, pady=(0, 16))
         self.entry = tk.Entry(
             row, font=(FONT, 12), bg=PANEL, fg=FG, insertbackground=FG, relief="flat", highlightthickness=1,
             highlightbackground="#2a2e3a", highlightcolor="#3d8bfd",
@@ -119,6 +108,21 @@ class App:
             row, text="Senden", command=self._send_text, font=(FONT, 11, "bold"), bg="#3d8bfd", fg="white",
             activebackground="#2f6fd0", activeforeground="white", relief="flat", padx=16,
         ).pack(side="left", padx=(8, 0), ipady=6)
+
+        frame = tk.Frame(self.root, bg=PANEL, bd=0, highlightthickness=0)
+        frame.pack(side="top", fill="both", expand=True, padx=18, pady=(0, 10))
+        self.transcript = tk.Text(
+            frame, wrap="word", state="disabled", font=(FONT, 11), bg=PANEL, fg=FG, height=6,
+            insertbackground=FG, relief="flat", padx=12, pady=10, spacing3=6,
+        )
+        scroll = tk.Scrollbar(frame, command=self.transcript.yview)
+        self.transcript.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.transcript.pack(side="left", fill="both", expand=True)
+        self.transcript.tag_config("Du", foreground="#7fb4ff", font=(FONT, 11, "bold"))
+        self.transcript.tag_config(self.name, foreground="#6fd38a", font=(FONT, 11, "bold"))
+        self.transcript.tag_config("System", foreground=MUTED, font=(FONT, 10, "italic"))
+
         self.entry.focus_set()
 
     # --- Zustandskreis ----------------------------------------------------

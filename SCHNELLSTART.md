@@ -165,6 +165,12 @@ Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microso
 Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
 Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
+## Updates holen
+
+Wenn es eine neue Version gibt: Jarvis schließen und in `C:\Jarvis` die Datei **`Aktualisieren.bat`**
+doppelklicken. Sie lädt den aktuellen Stand von GitHub, ersetzt die Programmdateien und lässt deine
+`.env` unangetastet. Kein erneutes ZIP-Kopieren nötig.
+
 ## Wenn etwas nicht geht
 
 - **„Der Claude-API-Schlüssel fehlt“**: `.env` liegt nicht direkt in `C:\Jarvis`, wurde nicht gespeichert, oder der Schlüssel steht nicht rechts vom `=`. Die Datei darf auch `.env.txt` heißen.
