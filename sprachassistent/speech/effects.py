@@ -106,6 +106,42 @@ def noise(x: np.ndarray, level: float) -> np.ndarray:
     return x + rng.standard_normal(len(x)).astype(np.float32) * level
 
 
+def bandpass(x: np.ndarray, low_hz: float, high_hz: float) -> np.ndarray:
+    return highpass(lowpass(x, high_hz), low_hz)
+
+
+def compress(x: np.ndarray, threshold: float = 0.25, ratio: float = 4.0, makeup: float = 1.6) -> np.ndarray:
+    """Einfacher Kompressor: laute Stellen zusammendrücken, Gesamtpegel anheben (gepresster, druckvoller Klang)."""
+    env = lowpass(np.abs(x), 25.0)
+    gain = np.where(env > threshold, (threshold + (env - threshold) / ratio) / np.maximum(env, 1e-6), 1.0)
+    return (x * gain * makeup).astype(np.float32)
+
+
+def _breath_cycle(seconds_in: float = 0.9, seconds_out: float = 1.1, level: float = 0.28) -> np.ndarray:
+    """Ein Atemzug: gefiltertes Rauschen mit Ein- und Ausatem-Hüllkurve (Maskenatmung)."""
+    rng = np.random.default_rng(11)
+    n_in, n_out, gap = int(seconds_in * SR), int(seconds_out * SR), int(0.12 * SR)
+    noise_in = bandpass(rng.standard_normal(n_in).astype(np.float32), 350, 1400)
+    noise_out = bandpass(rng.standard_normal(n_out).astype(np.float32), 250, 1000)
+    env_in = np.sin(np.linspace(0, np.pi, n_in)) ** 1.4
+    env_out = np.sin(np.linspace(0, np.pi, n_out)) ** 1.1
+    breath = np.concatenate([noise_in * env_in * 0.9, np.zeros(gap, dtype=np.float32), noise_out * env_out])
+    breath /= max(float(np.max(np.abs(breath))), 1e-6)
+    return (breath * level).astype(np.float32)
+
+
+def breath(x: np.ndarray, before: bool = True, after: bool = True) -> np.ndarray:
+    """Hängt Maskenatmung vor und/oder nach die Sprache (Vader-Stil)."""
+    parts = []
+    pause = np.zeros(int(0.35 * SR), dtype=np.float32)
+    if before:
+        parts += [_breath_cycle(), pause]
+    parts.append(x)
+    if after:
+        parts += [pause, _breath_cycle()]
+    return np.concatenate(parts)
+
+
 def layer(x: np.ndarray, semitones: float, gain: float) -> np.ndarray:
     """Eine tonhöhenverschobene Kopie dazumischen (Sub-Oktave, Dämonen-Chor)."""
     return x + pitch_shift(x, semitones) * gain
@@ -114,6 +150,7 @@ def layer(x: np.ndarray, semitones: float, gain: float) -> np.ndarray:
 EFFECTS = {
     "pitch": pitch_shift, "distortion": distortion, "lowpass": lowpass, "highpass": highpass, "reverb": reverb,
     "ring_mod": ring_mod, "tremolo": tremolo, "flanger": flanger, "bitcrush": bitcrush, "noise": noise, "layer": layer,
+    "bandpass": bandpass, "compress": compress, "breath": breath,
 }
 
 

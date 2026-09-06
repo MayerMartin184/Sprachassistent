@@ -25,7 +25,8 @@ def test_every_preset_chain_runs_and_stays_in_range():
     for key, *_ in VOICE_PRESETS:
         voice, pitch, rate, style, fx = preset(key)
         y = effects.apply_chain(x, fx)
-        assert len(y) == len(x) and np.isfinite(y).all() and np.max(np.abs(y)) <= 0.99, key
+        has_breath = any(step[0] == "breath" for step in fx)
+        assert (len(y) > len(x) if has_breath else len(y) == len(x)) and np.isfinite(y).all() and np.max(np.abs(y)) <= 0.99, key
 
 
 def test_process_wav_roundtrip():
@@ -37,3 +38,11 @@ def test_process_wav_roundtrip():
     with wave.open(io.BytesIO(out)) as wf:
         assert wf.getframerate() == effects.SR and wf.getnframes() == len(pcm)
     assert effects.process_wav(buf.getvalue(), []) == buf.getvalue()
+
+
+def test_vader_breath_adds_audio_before_and_after():
+    x = _tone(0.5)
+    y = effects.breath(x)
+    assert len(y) > len(x) + effects.SR * 3  # zwei Atemzüge plus Pausen
+    head = y[: int(0.5 * effects.SR)]
+    assert np.max(np.abs(head)) > 0.02  # vorne ist Atmen hörbar

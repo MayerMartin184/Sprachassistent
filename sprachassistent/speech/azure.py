@@ -35,8 +35,9 @@ VOICE_PRESETS: list[tuple] = [
     # --- Filmcharaktere (Effektkette) ---
     ("bordcomputer", "★ Bordcomputer – ruhig, kalt, leicht metallisch (KI im Raumschiff)", "de-DE-FlorianMultilingualNeural", "-6%", "-10%", None,
      [("flanger", 0.3, 1.5, 0.35), ("reverb", 0.3, 0.18)]),
-    ("maskenlord", "★ Dunkler Maskenlord – tief, atmend, bedrohlich", "de-DE-ConradNeural", "-28%", "-14%", None,
-     [("layer", -12, 0.5), ("lowpass", 1900), ("distortion", 1.7), ("reverb", 0.4, 0.25)]),
+    ("vader", "★ Darth Vader (Stil) – tief, Maske, Atmen", "de-DE-ConradNeural", "-24%", "-18%", None,
+     [("layer", -12, 0.4), ("bandpass", 220, 3400), ("distortion", 1.6), ("compress", 0.22, 5.0, 1.7),
+      ("reverb", 0.35, 0.22), ("breath", True, True)]),
     ("daemon", "★ Dämon – mehrere Kehlen, verzerrt, hallend", "de-DE-ConradNeural", "-35%", "-10%", None,
      [("layer", -12, 0.8), ("layer", -7, 0.45), ("layer", 4, 0.2), ("distortion", 3.0), ("reverb", 1.4, 0.45)]),
     ("monster", "★ Monster – gewaltig, knurrend, sehr tief", "de-DE-RalfNeural", "-42%", "-18%", None,
