@@ -78,6 +78,11 @@ def make_handler(api: Api):  # noqa: ANN201
                 elif path == "/api/open_settings":
                     api.open_settings()
                     self._json({"ok": True})
+                elif path == "/api/microsoft_login":
+                    threading.Thread(target=api.microsoft_login, daemon=True).start()
+                    self._json({"message": "Anmeldung läuft – Anweisungen erscheinen im Verlauf."})
+                elif path == "/api/microsoft_signout":
+                    self._json({"message": api.microsoft_signout()})
                 elif path == "/api/setup_m365":
                     threading.Thread(target=api.setup_m365, daemon=True).start()
                     self._json({"message": "Einrichtung läuft – Anweisungen erscheinen im Verlauf."})

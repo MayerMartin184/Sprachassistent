@@ -8,6 +8,7 @@ damit das Modell (und der Nutzer) bequem darauf verweisen kann.
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
@@ -76,17 +77,40 @@ def html_to_text(html: str) -> str:
 
 
 class GraphClient:
-    def __init__(self, client_id: str, tenant_id: str, cache_path: Path, notify: Notify) -> None:
+    """Anmeldung bei Microsoft mit drei Wegen, in dieser Reihenfolge:
+
+    1. Windows-Konto (Broker): nutzt die Anmeldung des Rechners, meist ohne Kennworteingabe.
+    2. Browser: öffnet den Standardbrowser; besteht dort schon eine Microsoft-Sitzung, geht es ohne Kennwort.
+    3. Gerätecode: Code in einem beliebigen Browser eingeben – auch in dem, in dem man schon angemeldet ist.
+    """
+
+    def __init__(
+        self,
+        client_id: str,
+        tenant_id: str,
+        cache_path: Path,
+        notify: Notify,
+        login_method: str = "auto",
+        login_hint: str | None = None,
+    ) -> None:
         self.cache_path = cache_path
         self.notify = notify
+        self.login_method = (login_method or "auto").lower()
+        self.login_hint = login_hint or None
         self._cache = msal.SerializableTokenCache()
         if cache_path.exists():
             self._cache.deserialize(cache_path.read_text(encoding="utf-8"))
-        self._app = msal.PublicClientApplication(
-            client_id,
-            authority=f"https://login.microsoftonline.com/{tenant_id}",
-            token_cache=self._cache,
-        )
+        authority = f"https://login.microsoftonline.com/{tenant_id}"
+        broker = sys.platform == "win32" and self.login_method in ("auto", "windows")
+        try:
+            self._app = msal.PublicClientApplication(
+                client_id, authority=authority, token_cache=self._cache, enable_broker_on_windows=broker
+            )
+            self.broker = broker
+        except Exception as exc:  # noqa: BLE001 - ohne Broker-Paket weiter ohne Windows-Anmeldung
+            log.info("Windows-Anmeldung nicht verfügbar (%s) – Browser/Gerätecode", exc)
+            self._app = msal.PublicClientApplication(client_id, authority=authority, token_cache=self._cache)
+            self.broker = False
 
     def _save_cache(self) -> None:
         if self._cache.has_state_changed:
@@ -95,6 +119,18 @@ class GraphClient:
 
     def has_account(self) -> bool:
         return bool(self._app.get_accounts())
+
+    def account_name(self) -> str | None:
+        accounts = self._app.get_accounts()
+        return accounts[0].get("username") if accounts else None
+
+    def sign_out(self) -> str:
+        for account in self._app.get_accounts():
+            self._app.remove_account(account)
+        self._save_cache()
+        if self.cache_path.exists():
+            self.cache_path.unlink()
+        return "Microsoft-Anmeldung entfernt."
 
     def token(self) -> str:
         result = None
@@ -108,22 +144,65 @@ class GraphClient:
         self._save_cache()
         return result["access_token"]
 
+    def login(self) -> str:
+        """Anmeldung ausdrücklich starten (Knopf in den Einstellungen)."""
+        self._login()
+        self._save_cache()
+        name = self.account_name()
+        return f"Angemeldet als {name}." if name else "Anmeldung abgeschlossen."
+
+    # --- Anmeldewege ---------------------------------------------------------------
     def _login(self) -> dict[str, Any]:
-        """Erst Anmeldung im Browser (Umleitung auf http://localhost), sonst Gerätecode als Ausweichweg."""
-        self.notify("Bitte im Browser bei Microsoft anmelden. Das Fenster öffnet sich gleich.")
-        try:
-            result = self._app.acquire_token_interactive(
-                SCOPES, prompt="select_account", timeout=300, success_template=_SUCCESS_HTML
-            )
-            if "access_token" in result:
+        errors: list[str] = []
+        for step in self._steps():
+            try:
+                result = step()
+            except Exception as exc:  # noqa: BLE001 - nächster Weg wird versucht
+                log.info("Anmeldeweg fehlgeschlagen: %s", exc)
+                errors.append(str(exc))
+                continue
+            if result and "access_token" in result:
                 return result
-            log.warning("Browser-Anmeldung fehlgeschlagen: %s", result.get("error_description"))
-        except Exception as exc:  # noqa: BLE001 - z. B. kein Browser oder Port belegt
-            log.warning("Browser-Anmeldung nicht möglich: %s", exc)
+            if result:
+                detail = result.get("error_description") or result.get("error") or str(result)
+                log.info("Anmeldeweg ohne Token: %s", detail)
+                errors.append(str(detail).splitlines()[0])
+        raise RuntimeError("Anmeldung nicht möglich. " + " | ".join(errors[-3:]))
+
+    def _steps(self) -> list[Any]:
+        if self.login_method == "devicecode":
+            return [self._by_device_code]
+        if self.login_method == "browser":
+            return [self._by_browser, self._by_device_code]
+        if self.login_method == "windows":
+            return [self._by_broker, self._by_device_code]
+        return [self._by_broker, self._by_browser, self._by_device_code]
+
+    def _by_broker(self) -> dict[str, Any] | None:
+        if not self.broker:
+            return None
+        self.notify("Anmeldung über das Windows-Konto – bitte im Windows-Fenster bestätigen.")
+        return self._app.acquire_token_interactive(
+            SCOPES,
+            login_hint=self.login_hint,
+            parent_window_handle=msal.PublicClientApplication.CONSOLE_WINDOW_HANDLE,
+            timeout=180,
+        )
+
+    def _by_browser(self) -> dict[str, Any]:
+        self.notify("Bitte im Browser bei Microsoft anmelden. Das Fenster öffnet sich gleich.")
+        return self._app.acquire_token_interactive(
+            SCOPES, login_hint=self.login_hint, timeout=300, success_template=_SUCCESS_HTML
+        )
+
+    def _by_device_code(self) -> dict[str, Any]:
         flow = self._app.initiate_device_flow(scopes=SCOPES)
         if "user_code" not in flow:
-            raise RuntimeError(f"Anmeldung konnte nicht gestartet werden: {flow.get('error_description', flow)}")
-        self.notify(flow["message"])
+            raise RuntimeError(f"Gerätecode nicht möglich: {flow.get('error_description', flow)}")
+        self.notify(
+            "Anmeldung per Code: Öffne https://microsoft.com/devicelogin am besten in dem Browser, in dem du schon "
+            f"bei Microsoft angemeldet bist, und gib diesen Code ein: {flow['user_code']}"
+        )
         return self._app.acquire_token_by_device_flow(flow)
 
     def request(

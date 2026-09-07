@@ -187,7 +187,17 @@
     </div></div>
     <div class="field"><label>Ruhezeit Kommentare</label><div class="range"><input type="range" id="s_cool" min="2" max="60" step="1"><span class="val" id="v_cool"></span></div></div>
     <div class="hint">Höchstens ein Kommentar pro Zeitraum. Die Gesichtserkennung läuft nur auf deinem Rechner; erst bei einem Ereignis geht ein Bild an Claude. Abschalten wirkt nach Neustart wieder ein.</div>
-    <div class="field"><label>Microsoft 365</label><div class="range">
+    <div class="field"><label>Microsoft-Anmeldung</label><select id="s_mslogin">
+      <option value="auto">Automatisch: Windows-Konto, sonst Browser, sonst Code</option>
+      <option value="windows">Windows-Konto (ohne Kennwort)</option>
+      <option value="browser">Browser</option>
+      <option value="devicecode">Code eingeben (in einem Browser, in dem du angemeldet bist)</option>
+    </select></div>
+    <div class="field"><label>Deine E-Mail</label><input type="text" id="s_mshint" placeholder="vorname.nachname@firma.de"></div>
+    <div class="hint" id="s_msstate">Wenn die Kennwortabfrage scheitert, obwohl office.com funktioniert: „Code eingeben“ wählen und den Code in dem Browser eingeben, in dem du bei Microsoft schon angemeldet bist.</div>
+    <div class="field"><label>Microsoft 365</label><div class="range" style="flex-wrap:wrap;gap:8px">
+      <button class="btn" id="s_mslogin_go" type="button">Jetzt anmelden</button>
+      <button class="btn" id="s_msout" type="button">Abmelden</button>
       <button class="btn" id="s_m365" type="button">Verbindung automatisch einrichten</button>
     </div></div>
     <div class="hint">Meldet dich einmal als Administrator an (Code im Verlauf) und richtet die Jarvis-App in Entra selbst ein: Umleitungsadresse, Berechtigungen, Zustimmung. Ersetzt das Klicken im Azure-Portal.</div>
@@ -290,6 +300,8 @@ const ui = (() => {
     get_settings: () => call("settings"),
     save_settings: async v => (await call("settings", v)).message,
     setup_m365: async () => (await call("setup_m365", {})).message,
+    microsoft_login: async () => (await call("microsoft_login", {})).message,
+    microsoft_signout: async () => (await call("microsoft_signout", {})).message,
     config: () => call("config"),
     poll: () => call("poll"),
     confirm: (id, ok) => call("confirm", {id, ok}),
@@ -327,6 +339,11 @@ const ui = (() => {
     $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Hauptmodell", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
     [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
     $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
+    $("s_mslogin").value = st.ms_login_method || "auto"; $("s_mshint").value = st.ms_login_hint || "";
+    $("s_msstate").textContent = !st.ms_available
+      ? "Microsoft 365 ist noch nicht eingerichtet – zuerst „Verbindung automatisch einrichten“."
+      : st.ms_account ? ("Angemeldet als " + st.ms_account + ".")
+      : "Nicht angemeldet. Wenn die Kennwortabfrage scheitert, obwohl office.com funktioniert: „Code eingeben“ wählen und den Code in dem Browser eingeben, in dem du bei Microsoft schon angemeldet bist.";
     $("s_amb").value = st.ambient_extract_minutes; showVal("s_amb","v_amb", v => "alle " + v + " min");
     $("s_presence").checked = st.presence_enabled; $("s_cool").value = st.presence_cooldown_min; showVal("s_cool","v_cool", v => v + " min");
     $("s_ww").value = st.wake_word_threshold; $("s_pause").value = st.speech_end_silence_ms; $("s_vad").value = st.vad_threshold;
@@ -336,10 +353,16 @@ const ui = (() => {
   $("settings").addEventListener("click", openSettings);
   $("s_cancel").addEventListener("click", () => $("overlay").classList.remove("open"));
   $("s_env").addEventListener("click", () => api().open_settings());
+  $("s_mslogin_go").addEventListener("click", async () => {
+    await api().save_settings({ms_login_method: $("s_mslogin").value, ms_login_hint: $("s_mshint").value.trim()});
+    $("s_msg").textContent = await api().microsoft_login(); $("overlay").classList.remove("open");
+  });
+  $("s_msout").addEventListener("click", async () => { $("s_msg").textContent = await api().microsoft_signout(); });
   $("s_m365").addEventListener("click", async () => { $("s_msg").textContent = await api().setup_m365(); $("overlay").classList.remove("open"); });
   $("s_save").addEventListener("click", async () => {
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
     const msg = await api().save_settings({
+      ms_login_method: $("s_mslogin").value, ms_login_hint: $("s_mshint").value.trim(),
       assistant_model: $("s_model").value, assistant_effort: $("s_effort").value, ambient_model: $("s_amodel").value,
       audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,
       attention_seconds: parseInt($("s_att").value),

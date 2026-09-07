@@ -97,6 +97,7 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 | `WEBCAM_ENABLED`, `WEBCAM_INDEX` | nein | Standard `true`, `0` |
 | `BRAND_BG`, `BRAND_PANEL`, `BRAND_GRID`, `BRAND_LINE`, `BRAND_PRIMARY`, `BRAND_ACCENT`, `BRAND_TEXT`, `BRAND_MUTED` | nein | Hex-Farben der Oberfläche; Standard ist das Mayer-E-Concept-Design |
 | `BRAND_FONT`, `BRAND_MONO`, `BRAND_TITLE`, `LOGO_PATH` | nein | Schriftarten, Untertitel im Kopf, PNG-Logo |
+| `MS_LOGIN_METHOD`, `MS_LOGIN_HINT` | nein | Anmeldeweg (`auto`, `windows`, `browser`, `devicecode`) und eigene E-Mail |
 | `MS_CLIENT_ID`, `MS_TENANT_ID` | für Microsoft 365 | Ohne `MS_CLIENT_ID` laufen Aufgaben lokal, Mail/Kalender/Teams sind aus |
 | `DOCUMENTS_ROOT`, `FILE_ROOTS` | nein | Ablageordner (Standard `~/Documents`) und weitere freigegebene Ordner als `Name=Pfad;Name=Pfad` |
 | `TIMEZONE` | nein | Standard `Europe/Berlin` |

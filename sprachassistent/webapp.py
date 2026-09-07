@@ -132,6 +132,9 @@ class Api:
             "models": [{"id": k, "name": n} for k, n in MODELS.items()], "efforts": EFFORTS,
             "assistant_model": s.assistant_model, "assistant_effort": s.assistant_effort,
             "ambient_model": s.ambient_model or "",
+            "ms_login_method": s.ms_login_method, "ms_login_hint": s.ms_login_hint or "",
+            "ms_available": self.assistant is not None and self.assistant.graph is not None,
+            "ms_account": self.assistant.graph.account_name() if (self.assistant and self.assistant.graph) else None,
             "languages": s.language_list,
             "audio_input_device": s.audio_input_device or "", "audio_output_device": s.audio_output_device or "",
             "wake_word_threshold": s.wake_word_threshold, "speech_end_silence_ms": s.speech_end_silence_ms,
@@ -153,6 +156,7 @@ class Api:
             "ambient_extract_minutes": ("AMBIENT_EXTRACT_MINUTES", int),
             "assistant_model": ("ASSISTANT_MODEL", str), "assistant_effort": ("ASSISTANT_EFFORT", str),
             "ambient_model": ("AMBIENT_MODEL", str),
+            "ms_login_method": ("MS_LOGIN_METHOD", str), "ms_login_hint": ("MS_LOGIN_HINT", str),
         }
         env_values: dict[str, str] = {}
         for field, (env_key, cast) in mapping.items():
@@ -173,6 +177,10 @@ class Api:
         if self.assistant is not None and self.assistant.speech is not None:
             self.assistant.speech.voice_preset = s.tts_preset
             self.assistant.speech.languages = s.language_list
+        graph = self.assistant.graph if self.assistant is not None else None
+        if graph is not None:
+            graph.login_method = (s.ms_login_method or "auto").lower()
+            graph.login_hint = s.ms_login_hint or None
         if self.presence is not None:
             self.presence.logic.cooldown_s = s.presence_cooldown_min * 60
             if not s.presence_enabled:
@@ -192,6 +200,28 @@ class Api:
             except Exception as exc:  # noqa: BLE001
                 return f"Gespeichert, aber Mikrofon nicht gefunden: {exc}"
         return "Gespeichert und übernommen."
+
+    def microsoft_login(self) -> str:
+        """Meldet ausdrücklich bei Microsoft an (Windows-Konto, Browser oder Code – je nach Einstellung)."""
+        graph = self.assistant.graph if self.assistant is not None else None
+        if graph is None:
+            return "Microsoft 365 ist nicht eingerichtet (MS_CLIENT_ID fehlt)."
+        try:
+            message = graph.login()
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Microsoft-Anmeldung fehlgeschlagen")
+            self._push("System", f"Microsoft-Anmeldung fehlgeschlagen: {exc}")
+            return f"Fehlgeschlagen: {exc}"
+        self._push("System", message)
+        return message
+
+    def microsoft_signout(self) -> str:
+        graph = self.assistant.graph if self.assistant is not None else None
+        if graph is None:
+            return "Microsoft 365 ist nicht eingerichtet."
+        message = graph.sign_out()
+        self._push("System", message)
+        return message
 
     def setup_m365(self) -> str:
         """Richtet die Microsoft-App automatisch ein (Administrator-Anmeldung per Gerätecode)."""

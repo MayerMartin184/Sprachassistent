@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # Microsoft 365
     ms_client_id: str | None = None
     ms_tenant_id: str = "common"
+    ms_login_method: str = "auto"  # auto | windows | browser | devicecode
+    ms_login_hint: str | None = None  # eigene E-Mail-Adresse: überspringt die Kontoauswahl
 
     # Audio
     audio_input_device: str | None = None  # Name (Teilstring) oder Nummer des Mikrofons; leer = Windows-Standard
@@ -94,7 +96,7 @@ class Settings(BaseSettings):
             return Path(value).expanduser() if value.strip() else None
         return value
 
-    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", "ambient_model", mode="before")
+    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", "ambient_model", "ms_login_hint", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

@@ -24,6 +24,7 @@ GRAPH_APP_ID = "00000003-0000-0000-c000-000000000000"
 SETUP_SCOPES = ["Application.ReadWrite.All", "DelegatedPermissionGrant.ReadWrite.All", "Directory.Read.All"]
 APP_NAME = "Jarvis Sprachassistent"
 REDIRECT = "http://localhost"
+BROKER_REDIRECT = "ms-appx-web://Microsoft.AAD.BrokerPlugin/{client_id}"  # Anmeldung über das Windows-Konto
 
 
 class M365Setup:
@@ -85,7 +86,7 @@ class M365Setup:
             "displayName": APP_NAME,
             "signInAudience": "AzureADMyOrg",
             "isFallbackPublicClient": True,
-            "publicClient": {"redirectUris": [REDIRECT]},
+            "publicClient": {"redirectUris": [REDIRECT]},  # Broker-Adresse folgt, sobald die appId bekannt ist
             "requiredResourceAccess": [
                 {"resourceAppId": GRAPH_APP_ID, "resourceAccess": [{"id": sid, "type": "Scope"} for sid in scope_ids.values()]}
             ],
@@ -97,12 +98,17 @@ class M365Setup:
         if app is None:
             app = self._req("POST", "/applications", json=body)
             time.sleep(3)  # Verzeichnis braucht einen Moment
+            self._ensure_redirects(app["id"], app["appId"], set())
             return app, True
-        patch = {k: v for k, v in body.items() if k != "displayName"}
-        existing_uris = set(app.get("publicClient", {}).get("redirectUris", []))
-        patch["publicClient"] = {"redirectUris": sorted(existing_uris | {REDIRECT})}
+        patch = {k: v for k, v in body.items() if k not in ("displayName", "publicClient")}
         self._req("PATCH", f"/applications/{app['id']}", json=patch)
+        self._ensure_redirects(app["id"], app["appId"], set(app.get("publicClient", {}).get("redirectUris", [])))
         return app, False
+
+    def _ensure_redirects(self, object_id: str, app_id: str, existing: set[str]) -> None:
+        """http://localhost (Browser) und die Broker-Adresse (Windows-Konto) eintragen, Vorhandenes behalten."""
+        wanted = existing | {REDIRECT, BROKER_REDIRECT.format(client_id=app_id)}
+        self._req("PATCH", f"/applications/{object_id}", json={"publicClient": {"redirectUris": sorted(wanted)}})
 
     def ensure_service_principal(self, app_id: str) -> dict[str, Any]:
         data = self._req("GET", "/servicePrincipals", params={"$filter": f"appId eq '{app_id}'"})

@@ -33,6 +33,8 @@ class Assistant:
                 settings.ms_tenant_id,
                 settings.data_dir / "ms_token_cache.json",
                 notify,
+                login_method=settings.ms_login_method,
+                login_hint=settings.ms_login_hint,
             )
             self.graph = graph
             self.m365 = m365.M365Tools(graph, confirm, settings.timezone)
