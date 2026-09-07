@@ -242,12 +242,28 @@ class Api:
         cache = self.s.data_dir / "ms_token_cache.json"
         if cache.exists():
             cache.unlink()  # alte Anmeldung passt nicht mehr zu den neuen Berechtigungen
+        self.s.ms_client_id, self.s.ms_tenant_id = result["client_id"], result["tenant_id"] or self.s.ms_tenant_id
+        self._rebuild_graph()
         what = "neu angelegt" if result["created"] else "korrigiert"
         msg = (f"Microsoft-App {what}: Umleitungsadresse, Berechtigungen und Administrator-Zustimmung gesetzt. "
-               f"MS_CLIENT_ID={result['client_id']} in die .env geschrieben. Bitte Jarvis neu starten; "
-               "beim ersten Kalender- oder Mail-Zugriff öffnet sich dann die normale Anmeldung im Browser.")
+               "Du kannst jetzt in den Einstellungen auf „Jetzt anmelden“ klicken – ein Neustart ist nicht nötig.")
         self._push("System", msg)
         return msg
+
+    def _rebuild_graph(self) -> None:
+        """Nach der Einrichtung mit der neuen App-Kennung weiterarbeiten, ohne Jarvis neu zu starten."""
+        from .tools.m365 import GraphClient
+
+        if self.assistant is None or self.assistant.graph is None:
+            return
+        graph = GraphClient(
+            self.s.ms_client_id or "", self.s.ms_tenant_id, self.s.data_dir / "ms_token_cache.json",
+            lambda msg: self._push("System", msg),
+            login_method=self.s.ms_login_method, login_hint=self.s.ms_login_hint,
+        )
+        self.assistant.graph = graph
+        if self.assistant.m365 is not None:
+            self.assistant.m365.graph = graph
 
     # --- Vom Browser aufgerufen ----------------------------------------------
     def config(self) -> dict[str, Any]:
