@@ -32,6 +32,13 @@ SCOPES = [
     "Tasks.ReadWrite",
     "OnlineMeetings.Read",
     "OnlineMeetingTranscript.Read.All",
+    "Chat.ReadWrite",
+    "Chat.Create",
+    "ChatMessage.Send",
+    "ChannelMessage.Send",
+    "Team.ReadBasic.All",
+    "Channel.ReadBasic.All",
+    "User.ReadBasic.All",
 ]
 MAIL_FIELDS = "id,subject,from,toRecipients,receivedDateTime,isRead,flag,bodyPreview,hasAttachments"
 _SUCCESS_HTML = (
@@ -274,6 +281,7 @@ class M365Tools:
         self._folder_cache: dict[str, str] = {}
         self._task_lists: dict[str, str] = {}
         self._meeting_urls: dict[str, str] = {}
+        self._channel_teams: dict[str, str] = {}
 
     # --- Kurz-IDs -------------------------------------------------------
     def _short(self, graph_id: str, prefix: str = "m") -> str:
@@ -589,6 +597,135 @@ class M365Tools:
         updated = self.graph.request("PATCH", path, json=patch)
         return "Aktualisiert:\n" + self._fmt_todo(updated, "")
 
+    # --- Teams-Nachrichten -------------------------------------------------
+    def _chat_title(self, chat: dict[str, Any]) -> str:
+        if chat.get("topic"):
+            return str(chat["topic"])
+        names = [
+            m.get("displayName")
+            for m in chat.get("members", [])
+            if m.get("displayName") and m.get("userId") != self._me_id()
+        ]
+        if names:
+            return ", ".join(n for n in names if n)
+        return {"oneOnOne": "Einzelchat", "group": "Gruppenchat"}.get(chat.get("chatType", ""), "Chat")
+
+    def _me_id(self) -> str:
+        if not hasattr(self, "_my_id"):
+            self._my_id = self.graph.request("GET", "/me", params={"$select": "id"}).get("id", "")
+        return self._my_id
+
+    def teams_chats(self, top: int = 15) -> str:
+        data = self.graph.request(
+            "GET", "/me/chats",
+            params={"$top": max(1, min(top, 50)), "$expand": "members", "$orderby": "lastMessagePreview/createdDateTime desc"},
+        )
+        chats = data.get("value", [])
+        if not chats:
+            return "Keine Teams-Chats gefunden."
+        lines = ["Teams-Chats (ID | Beteiligte):"]
+        for chat in chats:
+            lines.append(f"{self._short(chat['id'], 'c')} | {self._chat_title(chat)}")
+        return "\n".join(lines)
+
+    def teams_chat_read(self, chat_id: str, top: int = 15) -> str:
+        graph_id = self._long(chat_id, "c", "teams_chats")
+        data = self.graph.request("GET", f"/chats/{graph_id}/messages", params={"$top": max(1, min(top, 50))})
+        messages = [m for m in data.get("value", []) if (m.get("body") or {}).get("content")]
+        if not messages:
+            return "Keine Nachrichten in diesem Chat."
+        lines = []
+        for m in reversed(messages):
+            who = ((m.get("from") or {}).get("user") or {}).get("displayName") or "System"
+            body = m["body"]
+            text = html_to_text(body["content"]) if body.get("contentType") == "html" else body["content"]
+            lines.append(f"[{self._local(m.get('createdDateTime'))}] {who}: {' '.join(text.split())[:400]}")
+        return "\n".join(lines)
+
+    def _find_user(self, query: str) -> dict[str, Any]:
+        q = query.strip().replace("'", "''")
+        data = self.graph.request(
+            "GET", "/users",
+            params={
+                "$filter": f"startswith(displayName,'{q}') or startswith(mail,'{q}') or startswith(userPrincipalName,'{q}')",
+                "$select": "id,displayName,mail,userPrincipalName", "$top": 10,
+            },
+        )
+        people = data.get("value", [])
+        if not people:
+            raise KeyError(f"Keine Person mit '{query}' gefunden.")
+        if len(people) > 1:
+            exact = [p for p in people if (p.get("mail") or "").lower() == query.lower() or (p.get("displayName") or "").lower() == query.lower()]
+            if exact:
+                return exact[0]
+            names = ", ".join(f"{p['displayName']} <{p.get('mail') or p.get('userPrincipalName')}>" for p in people)
+            raise KeyError(f"Mehrere Personen passen zu '{query}': {names}. Bitte genauer angeben.")
+        return people[0]
+
+    def _one_on_one_chat(self, user_id: str) -> str:
+        data = self.graph.request("GET", "/me/chats", params={"$filter": "chatType eq 'oneOnOne'", "$expand": "members", "$top": 50})
+        for chat in data.get("value", []):
+            if any(m.get("userId") == user_id for m in chat.get("members", [])):
+                return chat["id"]
+        created = self.graph.request(
+            "POST", "/chats",
+            json={
+                "chatType": "oneOnOne",
+                "members": [
+                    {"@odata.type": "#microsoft.graph.aadUserConversationMember", "roles": ["owner"],
+                     "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{uid}')"}
+                    for uid in (self._me_id(), user_id)
+                ],
+            },
+        )
+        return created["id"]
+
+    def teams_send_chat(self, message: str, to: str | None = None, chat_id: str | None = None) -> str:
+        if chat_id:
+            target_id = self._long(chat_id, "c", "teams_chats")
+            label = f"Chat {chat_id}"
+        elif to:
+            person = self._find_user(to)
+            target_id = self._one_on_one_chat(person["id"])
+            label = f"{person['displayName']} <{person.get('mail') or person.get('userPrincipalName')}>"
+        else:
+            raise ValueError("Bitte Empfänger (to) oder chat_id angeben.")
+        if not self.confirm(f"Teams-Nachricht senden?\nAn: {label}\n\n{message}"):
+            return "Der Nutzer hat den Versand abgelehnt. Nicht gesendet."
+        self.graph.request("POST", f"/chats/{target_id}/messages", json={"body": {"contentType": "text", "content": message}})
+        return f"Teams-Nachricht an {label} gesendet."
+
+    def teams_list_teams(self) -> str:
+        teams = self.graph.request("GET", "/me/joinedTeams", params={"$select": "id,displayName"}).get("value", [])
+        if not teams:
+            return "Du bist in keinem Team."
+        return "Teams (ID | Name):\n" + "\n".join(f"{self._short(t['id'], 'tm')} | {t['displayName']}" for t in teams)
+
+    def teams_channels(self, team_id: str) -> str:
+        graph_id = self._long(team_id, "tm", "teams_list_teams")
+        channels = self.graph.request("GET", f"/teams/{graph_id}/channels", params={"$select": "id,displayName"}).get("value", [])
+        if not channels:
+            return "Keine Kanäle gefunden."
+        lines = ["Kanäle (ID | Name):"]
+        for ch in channels:
+            short = self._short(ch["id"], "ch")
+            self._channel_teams[short] = graph_id
+            lines.append(f"{short} | {ch['displayName']}")
+        return "\n".join(lines)
+
+    def teams_send_channel(self, channel_id: str, message: str, subject: str | None = None) -> str:
+        graph_id = self._long(channel_id, "ch", "teams_channels")
+        team_id = self._channel_teams.get(channel_id)
+        if not team_id:
+            raise KeyError(f"Zu Kanal {channel_id} ist kein Team bekannt. Erst teams_channels aufrufen.")
+        if not self.confirm(f"Nachricht im Teams-Kanal {channel_id} posten?\n{('Betreff: ' + subject) if subject else ''}\n\n{message}"):
+            return "Der Nutzer hat das Posten abgelehnt. Nicht gesendet."
+        body: dict[str, Any] = {"body": {"contentType": "text", "content": message}}
+        if subject:
+            body["subject"] = subject
+        self.graph.request("POST", f"/teams/{team_id}/channels/{graph_id}/messages", json=body)
+        return f"Nachricht im Kanal {channel_id} gepostet."
+
     # --- Teams-Besprechungen -----------------------------------------------
     def teams_meetings(self, days_back: int = 7) -> str:
         end = datetime.now(self.tz)
@@ -788,6 +925,51 @@ def build_tools(m: M365Tools) -> list[Tool]:
                 ["task_id"],
             ),
             handler=m.todo_update,
+        ),
+        Tool(
+            name="teams_chats",
+            description="Listet die Teams-Chats des Nutzers mit Kurz-IDs (c1, c2 ...) und den Beteiligten.",
+            input_schema=schema({"top": {"type": "integer", "description": "Anzahl, Standard 15"}}),
+            handler=m.teams_chats,
+        ),
+        Tool(
+            name="teams_chat_read",
+            description="Liest die letzten Nachrichten eines Teams-Chats (Kurz-ID aus teams_chats).",
+            input_schema=schema({"chat_id": {"type": "string"}, "top": {"type": "integer"}}, ["chat_id"]),
+            handler=m.teams_chat_read,
+        ),
+        Tool(
+            name="teams_send_chat",
+            description=(
+                "Sendet eine Teams-Nachricht. Entweder to = Name oder E-Mail der Person (bestehender Chat wird "
+                "gefunden oder neu angelegt) oder chat_id aus teams_chats. Der Nutzer bestätigt den Versand."
+            ),
+            input_schema=schema(
+                {"message": {"type": "string"}, "to": {"type": "string"}, "chat_id": {"type": "string"}},
+                ["message"],
+            ),
+            handler=m.teams_send_chat,
+        ),
+        Tool(
+            name="teams_list_teams",
+            description="Listet die Teams, in denen der Nutzer Mitglied ist (Kurz-IDs tm1, tm2 ...).",
+            input_schema=schema({}),
+            handler=m.teams_list_teams,
+        ),
+        Tool(
+            name="teams_channels",
+            description="Listet die Kanäle eines Teams (Kurz-IDs ch1, ch2 ...). team_id aus teams_list_teams.",
+            input_schema=schema({"team_id": {"type": "string"}}, ["team_id"]),
+            handler=m.teams_channels,
+        ),
+        Tool(
+            name="teams_send_channel",
+            description="Postet eine Nachricht in einen Teams-Kanal (channel_id aus teams_channels). Der Nutzer bestätigt.",
+            input_schema=schema(
+                {"channel_id": {"type": "string"}, "message": {"type": "string"}, "subject": {"type": "string"}},
+                ["channel_id", "message"],
+            ),
+            handler=m.teams_send_channel,
         ),
         Tool(
             name="teams_meetings",

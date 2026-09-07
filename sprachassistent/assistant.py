@@ -39,7 +39,7 @@ class Assistant:
             self.graph = graph
             self.m365 = m365.M365Tools(graph, confirm, settings.timezone)
             registry.register_all(m365.build_tools(self.m365))
-            self.features += ["Microsoft To Do", "E-Mail", "Kalender", "Teams-Transkripte"]
+            self.features += ["Microsoft To Do", "E-Mail", "Kalender", "Teams-Nachrichten", "Teams-Transkripte"]
         else:
             registry.register_all(tasks.build_tools(tasks.TaskManager(settings.data_dir)))
             self.features.append("Aufgaben (lokal)")

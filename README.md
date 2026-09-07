@@ -8,6 +8,7 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Listen** (Einkauf, Ideen, Packliste …)
 - **E-Mail**: lesen, beantworten, ordnen, ablegen (Versand immer mit Bestätigung)
 - **Kalender**: Termine anzeigen und anlegen
+- **Teams-Nachrichten**: Chats lesen, Nachrichten an Personen senden (auch neue Chats), in Kanäle posten – Versand immer mit Bestätigung
 - **Teams-Besprechungen**: Transkript laden, kurz zusammenfassen, offene Punkte als To-Do anlegen
 - **Rechner**: Dateien in Dokumente, Downloads, Desktop, OneDrive, Netzlaufwerken/NAS und weiteren Ordnern suchen (auch im Inhalt), lesen (PDF, Word, Excel), ablegen, ordnen, kopieren, öffnen, in den Papierkorb (mit Rückfrage); Programme starten, Webseiten öffnen, Zwischenablage, Bildschirmfoto
 - **Webcam**: auf Zuruf ein Bild aufnehmen und dazu beraten („Jarvis, schau dir das Dokument an“)
@@ -113,7 +114,8 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 2. Kontotypen: Firma -> „nur dieses Verzeichnis“ (dann `MS_TENANT_ID` = Tenant-ID); privat/gemischt -> `common`.
 3. Authentifizierung -> „Plattform hinzufügen“ -> „Mobile Anwendungen und Desktopanwendungen“ -> `http://localhost` anhaken (Browser-Anmeldung).
 4. API-Berechtigungen (Microsoft Graph, delegiert): `User.Read`, `Mail.ReadWrite`, `Mail.Send`,
-   `Calendars.ReadWrite`, `Tasks.ReadWrite`, `OnlineMeetings.Read`, `OnlineMeetingTranscript.Read.All`.
+   `Calendars.ReadWrite`, `Tasks.ReadWrite`, `OnlineMeetings.Read`, `OnlineMeetingTranscript.Read.All`,
+   `Chat.ReadWrite`, `Chat.Create`, `ChatMessage.Send`, `ChannelMessage.Send`, `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `User.ReadBasic.All`.
    Für `OnlineMeetingTranscript.Read.All` ist in Firmen-Tenants meist eine Administrator-Zustimmung nötig.
 5. Anwendungs-ID (Client) als `MS_CLIENT_ID` eintragen.
 
