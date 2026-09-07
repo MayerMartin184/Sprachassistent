@@ -76,6 +76,38 @@ def html_to_text(html: str) -> str:
     return parser.text()
 
 
+AADSTS_HINTS = {
+    "AADSTS500113": (
+        "Die App-Registrierung hat keine Antwortadresse (Umleitungs-URI). "
+        "In den Einstellungen einmal „Verbindung automatisch einrichten“ anklicken – das trägt sie ein."
+    ),
+    "AADSTS50011": (
+        "Die Antwortadresse der App passt nicht. In den Einstellungen „Verbindung automatisch einrichten“ anklicken."
+    ),
+    "AADSTS7000218": (
+        "Die App erlaubt keine öffentlichen Clientflows. In den Einstellungen „Verbindung automatisch einrichten“ anklicken."
+    ),
+    "AADSTS65001": (
+        "Die Zustimmung zu den Berechtigungen fehlt. In den Einstellungen „Verbindung automatisch einrichten“ anklicken "
+        "(als Administrator) – das erteilt sie."
+    ),
+    "AADSTS700016": (
+        "Die App-Kennung (MS_CLIENT_ID) ist in diesem Microsoft-Konto unbekannt. "
+        "In den Einstellungen „Verbindung automatisch einrichten“ anklicken – das legt die App neu an."
+    ),
+    "AADSTS50126": "Benutzername oder Kennwort stimmen nicht. Wähle den Anmeldeweg „Code eingeben“.",
+    "AADSTS53003": "Eine Zugriffsrichtlinie eurer Firma blockiert die Anmeldung (Conditional Access).",
+}
+
+
+def explain(message: str) -> str:
+    """Ergänzt eine Microsoft-Fehlermeldung um einen Hinweis in Klartext."""
+    for code, hint in AADSTS_HINTS.items():
+        if code in message:
+            return f"{code}: {hint}"
+    return message.splitlines()[0] if message else "Unbekannter Fehler."
+
+
 class GraphClient:
     """Anmeldung bei Microsoft mit drei Wegen, in dieser Reihenfolge:
 
@@ -159,15 +191,16 @@ class GraphClient:
                 result = step()
             except Exception as exc:  # noqa: BLE001 - nächster Weg wird versucht
                 log.info("Anmeldeweg fehlgeschlagen: %s", exc)
-                errors.append(str(exc))
+                errors.append(explain(str(exc)))
                 continue
             if result and "access_token" in result:
                 return result
             if result:
-                detail = result.get("error_description") or result.get("error") or str(result)
+                detail = explain(str(result.get("error_description") or result.get("error") or result))
                 log.info("Anmeldeweg ohne Token: %s", detail)
-                errors.append(str(detail).splitlines()[0])
-        raise RuntimeError("Anmeldung nicht möglich. " + " | ".join(errors[-3:]))
+                self.notify(f"Anmeldung über diesen Weg nicht möglich – {detail}")
+                errors.append(detail)
+        raise RuntimeError("Anmeldung nicht möglich. " + " | ".join(dict.fromkeys(errors[-3:])))
 
     def _steps(self) -> list[Any]:
         if self.login_method == "devicecode":
@@ -186,13 +219,16 @@ class GraphClient:
             SCOPES,
             login_hint=self.login_hint,
             parent_window_handle=msal.PublicClientApplication.CONSOLE_WINDOW_HANDLE,
-            timeout=180,
+            timeout=120,
         )
 
     def _by_browser(self) -> dict[str, Any]:
-        self.notify("Bitte im Browser bei Microsoft anmelden. Das Fenster öffnet sich gleich.")
+        self.notify(
+            "Bitte im Browser bei Microsoft anmelden. Erscheint dort eine Fehlermeldung, einfach warten oder das "
+            "Fenster schließen – Jarvis versucht dann den Weg über einen Code."
+        )
         return self._app.acquire_token_interactive(
-            SCOPES, login_hint=self.login_hint, timeout=300, success_template=_SUCCESS_HTML
+            SCOPES, login_hint=self.login_hint, timeout=120, success_template=_SUCCESS_HTML
         )
 
     def _by_device_code(self) -> dict[str, Any]:

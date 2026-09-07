@@ -57,3 +57,20 @@ def test_broker_step_is_skipped_when_unavailable():
     client = _client("auto")
     client.broker = False
     assert client._by_broker() is None
+
+
+def test_error_codes_are_explained_in_plain_german():
+    from sprachassistent.tools.m365 import explain
+
+    text = explain("AADSTS500113: No reply address is registered for the application.")
+    assert "Antwortadresse" in text and "automatisch einrichten" in text
+    assert "Zustimmung" in explain("AADSTS65001: The user or administrator has not consented")
+    assert explain("Irgendein anderer Fehler\nZeile zwei") == "Irgendein anderer Fehler"
+
+
+def test_login_error_message_contains_hint(monkeypatch):
+    client = _client("browser")
+    monkeypatch.setattr(client, "_by_browser", lambda: {"error_description": "AADSTS500113: No reply address"})
+    monkeypatch.setattr(client, "_by_device_code", lambda: {"error_description": "abgebrochen"})
+    with pytest.raises(RuntimeError, match="Antwortadresse"):
+        client._login()
