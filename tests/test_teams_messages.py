@@ -12,7 +12,8 @@ class FakeGraph:
 
     def request(self, method, path, params=None, json=None, headers=None):  # noqa: ANN001, A002
         self.calls.append((method, path, json))
-        for (m, p), value in self.responses.items():
+        # längster passender Pfad gewinnt, damit "/me" nicht "/me/chats" abfängt
+        for (m, p), value in sorted(self.responses.items(), key=lambda kv: -len(kv[0][1])):
             if m == method and p in path:
                 return value
         return {}
@@ -70,9 +71,13 @@ def test_channel_message_needs_known_team():
         ("GET", "/channels"): {"value": [{"id": "chan-1", "displayName": "Allgemein"}]},
     })
     assert "tm1" in m.teams_list_teams()
+    with pytest.raises(KeyError, match="Unbekannte ID"):
+        m.teams_send_channel("ch1", "Text")  # ohne vorheriges Auflisten
+    assert "ch1" in m.teams_channels("tm1")
+    m._channel_teams.clear()  # Zuordnung Kanal -> Team verloren
     with pytest.raises(KeyError, match="kein Team bekannt"):
         m.teams_send_channel("ch1", "Text")
-    assert "ch1" in m.teams_channels("tm1")
+    m.teams_channels("tm1")
     assert "gepostet" in m.teams_send_channel("ch1", "Kurzinfo", subject="Status")
     posts = [c for c in m.graph.calls if c[0] == "POST"]
     assert posts[-1][1] == "/teams/team-1/channels/chan-1/messages" and posts[-1][2]["subject"] == "Status"
