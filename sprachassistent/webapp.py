@@ -132,6 +132,8 @@ class Api:
             "models": [{"id": k, "name": n} for k, n in MODELS.items()], "efforts": EFFORTS,
             "assistant_model": s.assistant_model, "assistant_effort": s.assistant_effort,
             "ambient_model": s.ambient_model or "",
+            "file_roots": s.file_roots or "",
+            "file_roots_status": self.assistant.files.status() if self.assistant is not None else "",
             "ms_login_method": s.ms_login_method, "ms_login_hint": s.ms_login_hint or "",
             "ms_available": self.assistant is not None and self.assistant.graph is not None,
             "ms_account": self.assistant.graph.account_name() if (self.assistant and self.assistant.graph) else None,
@@ -157,6 +159,7 @@ class Api:
             "assistant_model": ("ASSISTANT_MODEL", str), "assistant_effort": ("ASSISTANT_EFFORT", str),
             "ambient_model": ("AMBIENT_MODEL", str),
             "ms_login_method": ("MS_LOGIN_METHOD", str), "ms_login_hint": ("MS_LOGIN_HINT", str),
+            "file_roots": ("FILE_ROOTS", str),
         }
         env_values: dict[str, str] = {}
         for field, (env_key, cast) in mapping.items():
@@ -177,6 +180,11 @@ class Api:
         if self.assistant is not None and self.assistant.speech is not None:
             self.assistant.speech.voice_preset = s.tts_preset
             self.assistant.speech.languages = s.language_list
+        if "file_roots" in values and self.assistant is not None:
+            from .tools.files import roots_for
+
+            self.assistant.files.set_roots(roots_for(s.documents_root, s.file_roots))
+            self._push("System", "Freigegebene Ordner:\n" + self.assistant.files.status())
         graph = self.assistant.graph if self.assistant is not None else None
         if graph is not None:
             graph.login_method = (s.ms_login_method or "auto").lower()
@@ -203,6 +211,11 @@ class Api:
 
     def microsoft_login(self) -> str:
         """Meldet ausdrücklich bei Microsoft an (Windows-Konto, Browser oder Code – je nach Einstellung)."""
+        if "file_roots" in values and self.assistant is not None:
+            from .tools.files import roots_for
+
+            self.assistant.files.set_roots(roots_for(s.documents_root, s.file_roots))
+            self._push("System", "Freigegebene Ordner:\n" + self.assistant.files.status())
         graph = self.assistant.graph if self.assistant is not None else None
         if graph is None:
             return "Microsoft 365 ist nicht eingerichtet (MS_CLIENT_ID fehlt)."
@@ -216,6 +229,11 @@ class Api:
         return message
 
     def microsoft_signout(self) -> str:
+        if "file_roots" in values and self.assistant is not None:
+            from .tools.files import roots_for
+
+            self.assistant.files.set_roots(roots_for(s.documents_root, s.file_roots))
+            self._push("System", "Freigegebene Ordner:\n" + self.assistant.files.status())
         graph = self.assistant.graph if self.assistant is not None else None
         if graph is None:
             return "Microsoft 365 ist nicht eingerichtet."

@@ -86,7 +86,7 @@
   .field .range{display:flex;align-items:center;gap:12px}
   .field input[type=range]{flex:1;accent-color:var(--primary)}
   .field .val{font-family:var(--mono);font-size:11px;color:var(--primary);min-width:52px;text-align:right}
-  .hint{font-size:12px;color:var(--muted);margin:-8px 0 16px 204px;line-height:1.45}
+  .hint{white-space:pre-line;font-size:12px;color:var(--muted);margin:-8px 0 16px 204px;line-height:1.45}
   .actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
   .btn{border:1px solid var(--line);background:transparent;color:var(--text);font:700 10px var(--mono);letter-spacing:.22em;text-transform:uppercase;padding:11px 18px;cursor:pointer}
   .btn:hover{border-color:var(--primary);color:var(--primary)}
@@ -187,6 +187,8 @@
     </div></div>
     <div class="field"><label>Ruhezeit Kommentare</label><div class="range"><input type="range" id="s_cool" min="2" max="60" step="1"><span class="val" id="v_cool"></span></div></div>
     <div class="hint">Höchstens ein Kommentar pro Zeitraum. Die Gesichtserkennung läuft nur auf deinem Rechner; erst bei einem Ereignis geht ein Bild an Claude. Abschalten wirkt nach Neustart wieder ein.</div>
+    <div class="field"><label>Weitere Ordner</label><input type="text" id="s_roots" placeholder="Projekte=D:\Projekte;NAS=\\NAS\Daten"></div>
+    <div class="hint" id="s_rootstate">Dokumente, Downloads, Desktop und OneDrive sind immer freigegeben. Weitere Ordner als <b>Name=Pfad</b>, mehrere mit Semikolon getrennt. Für ein NAS entweder den Netzwerkpfad (\\NAS\Freigabe) oder den zugeordneten Laufwerksbuchstaben (Z:\) angeben.</div>
     <div class="field"><label>Microsoft-Anmeldung</label><select id="s_mslogin">
       <option value="auto">Automatisch: Windows-Konto, sonst Browser, sonst Code</option>
       <option value="windows">Windows-Konto (ohne Kennwort)</option>
@@ -339,6 +341,8 @@ const ui = (() => {
     $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Hauptmodell", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
     [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
     $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
+    $("s_roots").value = st.file_roots || "";
+    if (st.file_roots_status) $("s_rootstate").textContent = "Freigegeben:\n" + st.file_roots_status;
     $("s_mslogin").value = st.ms_login_method || "auto"; $("s_mshint").value = st.ms_login_hint || "";
     $("s_msstate").textContent = !st.ms_available
       ? "Microsoft 365 ist noch nicht eingerichtet – zuerst „Verbindung automatisch einrichten“."
@@ -362,7 +366,7 @@ const ui = (() => {
   $("s_save").addEventListener("click", async () => {
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
     const msg = await api().save_settings({
-      ms_login_method: $("s_mslogin").value, ms_login_hint: $("s_mshint").value.trim(),
+      file_roots: $("s_roots").value.trim(), ms_login_method: $("s_mslogin").value, ms_login_hint: $("s_mshint").value.trim(),
       assistant_model: $("s_model").value, assistant_effort: $("s_effort").value, ambient_model: $("s_amodel").value,
       audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,
       attention_seconds: parseInt($("s_att").value),

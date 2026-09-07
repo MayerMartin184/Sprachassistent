@@ -91,3 +91,30 @@ def test_update_env_file_replaces_and_appends(tmp_path):
     update_env_file(env, {"TTS_VOICE": "de-DE-ConradNeural", "AUDIO_INPUT_DEVICE": "USB PnP"})
     text = env.read_text(encoding="utf-8")
     assert text == "# Kommentar\nANTHROPIC_API_KEY=abc\nTTS_VOICE=de-DE-ConradNeural\nAUDIO_INPUT_DEVICE=USB PnP\n"
+
+
+def test_roots_tolerate_offline_network_drive(tmp_path):
+    """Ein nicht erreichbarer Ordner (NAS aus, Laufwerk fehlt) darf Jarvis nicht lahmlegen."""
+    from sprachassistent.tools.files import FileManager
+
+    blocker = tmp_path / "blocker"
+    blocker.write_text("keine Datei-Ordner-Struktur", encoding="utf-8")
+    fm = FileManager({"Dokumente": tmp_path / "docs", "NAS": blocker / "freigabe"})
+    assert set(fm.roots) == {"Dokumente", "NAS"}
+    assert "nicht erreichbar" in fm.status()
+    with pytest.raises(FileNotFoundError, match="nicht erreichbar"):
+        fm.resolve("NAS/datei.txt")
+    fm.write("Dokumente/a.txt", "x")  # der erreichbare Ordner funktioniert weiter
+    assert "a.txt" in fm.list_dir("Dokumente")
+    assert "a.txt" in fm.search("a.txt")  # offline-Wurzel wird bei der Suche übersprungen
+    assert "abgebrochen" in fm.search("a.txt", budget_s=-1)  # Zeitbudget bricht sauber ab
+
+
+def test_set_roots_updates_live(tmp_path):
+    from sprachassistent.tools.files import FileManager, roots_for
+
+    fm = FileManager({"Dokumente": tmp_path / "docs"})
+    fm.set_roots(roots_for(tmp_path / "docs", f"Projekte={tmp_path / 'proj'}"))
+    assert "Projekte" in fm.roots and (tmp_path / "proj").exists()
+    fm.write("Projekte/b.txt", "y")
+    assert "b.txt" in fm.list_dir("Projekte")

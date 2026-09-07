@@ -9,7 +9,7 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **E-Mail**: lesen, beantworten, ordnen, ablegen (Versand immer mit Bestätigung)
 - **Kalender**: Termine anzeigen und anlegen
 - **Teams-Besprechungen**: Transkript laden, kurz zusammenfassen, offene Punkte als To-Do anlegen
-- **Rechner**: Dateien in Dokumente, Downloads, Desktop, OneDrive und weiteren Ordnern suchen (auch im Inhalt), lesen (PDF, Word, Excel), ablegen, ordnen, kopieren, öffnen, in den Papierkorb (mit Rückfrage); Programme starten, Webseiten öffnen, Zwischenablage, Bildschirmfoto
+- **Rechner**: Dateien in Dokumente, Downloads, Desktop, OneDrive, Netzlaufwerken/NAS und weiteren Ordnern suchen (auch im Inhalt), lesen (PDF, Word, Excel), ablegen, ordnen, kopieren, öffnen, in den Papierkorb (mit Rückfrage); Programme starten, Webseiten öffnen, Zwischenablage, Bildschirmfoto
 - **Webcam**: auf Zuruf ein Bild aufnehmen und dazu beraten („Jarvis, schau dir das Dokument an“)
 - **Gedächtnis**: merkt sich Absprachen, Gewohnheiten, Personen und Vorlieben dauerhaft und nutzt sie
 - **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen

@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -44,12 +45,46 @@ def parse_roots(spec: str | None) -> dict[str, Path]:
     return roots
 
 
+def roots_for(documents_root: Path, spec: str | None) -> dict[str, Path]:
+    """Standardordner (Dokumente, Downloads, Desktop, OneDrive) plus die in FILE_ROOTS genannten."""
+    roots = default_roots()
+    roots["Dokumente"] = Path(documents_root)
+    roots.update(parse_roots(spec))
+    return roots
+
+
 class FileManager:
     def __init__(self, roots: dict[str, Path], confirm: Callable[[str], bool] | None = None) -> None:
-        self.roots = {name: path.expanduser().resolve() for name, path in roots.items()}
-        for path in self.roots.values():
-            path.mkdir(parents=True, exist_ok=True)
+        self.roots: dict[str, Path] = {}
+        self.unavailable: dict[str, str] = {}
+        self.set_roots(roots)
         self.confirm = confirm or (lambda _m: True)
+
+    def set_roots(self, roots: dict[str, Path]) -> None:
+        """Wurzelordner setzen. Nicht erreichbare Ordner (z. B. NAS im Ruhezustand) werden vermerkt, nicht entfernt."""
+        prepared: dict[str, Path] = {}
+        unavailable: dict[str, str] = {}
+        for name, path in roots.items():
+            try:
+                resolved = Path(path).expanduser()
+                resolved = resolved.resolve() if resolved.exists() else Path(str(resolved))
+                if not resolved.exists():
+                    resolved.mkdir(parents=True, exist_ok=True)
+                    resolved = resolved.resolve()
+            except OSError as exc:  # Netzlaufwerk offline, keine Rechte, Laufwerk fehlt
+                resolved = Path(str(path))
+                unavailable[name] = str(exc)
+                log.warning("Ordner '%s' (%s) nicht erreichbar: %s", name, path, exc)
+            prepared[name] = resolved
+        self.roots, self.unavailable = prepared, unavailable
+
+    def status(self) -> str:
+        lines = []
+        for name, path in self.roots.items():
+            ok = path.exists()
+            note = "" if ok else f"  – nicht erreichbar ({self.unavailable.get(name, 'offline?')})"
+            lines.append(f"{name}: {path}{note}")
+        return "\n".join(lines) or "Keine Ordner freigegeben."
 
     # --- Pfade -----------------------------------------------------------------
     def resolve(self, spec: str) -> Path:
@@ -71,6 +106,11 @@ class FileManager:
     def _root(self, name: str) -> Path:
         for key, path in self.roots.items():
             if key.lower() == name.lower():
+                if not path.exists():
+                    raise FileNotFoundError(
+                        f"Der Ordner '{key}' ({path}) ist gerade nicht erreichbar. "
+                        "Bei einem Netzlaufwerk: eingeschaltet und verbunden? Im Explorer einmal öffnen."
+                    )
                 return path
         raise KeyError(f"Unbekannte Wurzel '{name}'. Verfügbar: " + ", ".join(self.roots))
 
@@ -95,12 +135,18 @@ class FileManager:
             lines.append(f"... und {len(entries) - MAX_RESULTS} weitere")
         return "\n".join(lines)
 
-    def search(self, query: str, spec: str | None = None, content: bool = False) -> str:
-        bases = [self.resolve(spec)] if spec else list(self.roots.values())
+    def search(self, query: str, spec: str | None = None, content: bool = False, budget_s: float = 25.0) -> str:
+        """Sucht nach Namensbestandteil, auf Wunsch im Inhalt. Bricht nach `budget_s` ab (Netzlaufwerke)."""
+        bases = [self.resolve(spec)] if spec else [p for p in self.roots.values() if p.exists()]
         needle = query.lower()
         hits: list[Path] = []
+        deadline = time.monotonic() + budget_s
+        stopped = False
         for base in bases:
-            for dirpath, dirnames, filenames in os.walk(base):
+            for dirpath, dirnames, filenames in os.walk(base, onerror=lambda _e: None):
+                if time.monotonic() > deadline:
+                    stopped = True
+                    break
                 dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
                 for name in dirnames + filenames:
                     if needle in name.lower():
@@ -111,11 +157,15 @@ class FileManager:
                         if p.suffix.lower() in TEXT_SUFFIXES | DOC_SUFFIXES and p not in hits and needle in self._text_of(p, 200000).lower():
                             hits.append(p)
                 if len(hits) >= MAX_RESULTS * 3:
+                    stopped = True
                     break
+            if stopped:
+                break
+        note = "\n(Suche abgebrochen – zu viele Ordner oder langsames Netzlaufwerk; bitte Suchordner angeben.)" if stopped else ""
         if not hits:
-            return f"Keine Treffer für '{query}'."
+            return f"Keine Treffer für '{query}'." + note
         hits.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
-        return f"{len(hits)} Treffer für '{query}':\n" + "\n".join(self._describe(p) for p in hits[:MAX_RESULTS])
+        return f"{len(hits)} Treffer für '{query}':\n" + "\n".join(self._describe(p) for p in hits[:MAX_RESULTS]) + note
 
     def read(self, spec: str, max_chars: int = 8000) -> str:
         path = self.resolve(spec)
@@ -265,6 +315,8 @@ def build_tools(fm: FileManager) -> list[Tool]:
     roots = ", ".join(f"{n} ({p})" for n, p in fm.roots.items())
     hint = f"Pfade beginnen mit dem Namen der Wurzel, z. B. 'Downloads/Rechnung.pdf'. Wurzeln: {roots}."
     return [
+        Tool("files_status", "Zeigt die freigegebenen Ordner und ob sie gerade erreichbar sind (z. B. Netzlaufwerk/NAS).",
+             schema({}), fm.status),
         Tool("files_list", f"Listet den Inhalt eines Ordners. {hint}", schema({"path": {"type": "string"}}, ["path"]), lambda path: fm.list_dir(path)),
         Tool(
             "files_search",

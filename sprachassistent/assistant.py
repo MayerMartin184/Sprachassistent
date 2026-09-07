@@ -45,9 +45,7 @@ class Assistant:
             self.features.append("Aufgaben (lokal)")
 
         registry.register_all(lists.build_tools(lists.ListManager(settings.data_dir)))
-        roots = files.default_roots()
-        roots["Dokumente"] = settings.documents_root
-        roots.update(files.parse_roots(settings.file_roots))
+        roots = files.roots_for(settings.documents_root, settings.file_roots)
         self.files = files.FileManager(roots, confirm)
         registry.register_all(files.build_tools(self.files))
         registry.register_all(documents.build_tools(self.files))

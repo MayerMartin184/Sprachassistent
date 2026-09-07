@@ -173,6 +173,25 @@ Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microso
 Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
 Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
+## NAS oder Netzlaufwerk freigeben
+
+1. Sicherstellen, dass der Ordner im Windows-Explorer ohne Kennwortabfrage aufgeht. Falls doch eine kommt:
+   im Explorer das Netzlaufwerk verbinden und dabei **„Anmeldedaten speichern“** ankreuzen. Jarvis benutzt
+   dieselbe Windows-Anmeldung; eigene NAS-Kennwörter speichert er nicht.
+2. In Jarvis: Einstellungen → Feld **„Weitere Ordner“**, dort eintragen (Name frei wählbar):
+
+```
+NAS=\\NAS\Daten
+```
+
+   Mehrere Ordner mit Semikolon: `NAS=\\NAS\Daten;Projekte=D:\Projekte`
+   Ein zugeordneter Laufwerksbuchstabe geht auch: `NAS=Z:\`
+3. Speichern. Im Verlauf steht danach, welche Ordner freigegeben und erreichbar sind.
+4. Test: „Hey Jarvis, was liegt im NAS-Ordner?“ oder „Such im NAS nach Angebot Popescu.“
+
+Ist das NAS ausgeschaltet, startet Jarvis trotzdem und meldet den Ordner nur als nicht erreichbar.
+Eine Suche über das ganze NAS bricht nach etwa 25 Sekunden ab; besser einen Unterordner angeben.
+
 ## Updates holen
 
 Wenn es eine neue Version gibt: Jarvis schließen und in `C:\Jarvis` die Datei **`Aktualisieren.bat`**
