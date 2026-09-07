@@ -39,6 +39,7 @@ SCOPES = [
     "Team.ReadBasic.All",
     "Channel.ReadBasic.All",
     "User.ReadBasic.All",
+    "Group.Read.All",
 ]
 MAIL_FIELDS = "id,subject,from,toRecipients,receivedDateTime,isRead,flag,bodyPreview,hasAttachments"
 _SUCCESS_HTML = (
@@ -282,6 +283,8 @@ class M365Tools:
         self._task_lists: dict[str, str] = {}
         self._meeting_urls: dict[str, str] = {}
         self._channel_teams: dict[str, str] = {}
+        self._plan_groups: dict[str, str] = {}
+        self._bucket_plans: dict[str, str] = {}
 
     # --- Kurz-IDs -------------------------------------------------------
     def _short(self, graph_id: str, prefix: str = "m") -> str:
@@ -726,6 +729,131 @@ class M365Tools:
         self.graph.request("POST", f"/teams/{team_id}/channels/{graph_id}/messages", json=body)
         return f"Nachricht im Kanal {channel_id} gepostet."
 
+    # --- Aufgaben in Teams-Kanälen (Planner) --------------------------------
+    def planner_plans(self, team_id: str) -> str:
+        """Aufgabenpläne eines Teams. In Teams sind das die Inhalte des Reiters „Aufgaben“ im Kanal."""
+        group_id = self._long(team_id, "tm", "teams_list_teams")
+        plans = self.graph.request("GET", f"/groups/{group_id}/planner/plans").get("value", [])
+        if not plans:
+            return (
+                "Für dieses Team gibt es noch keinen Aufgabenplan. In Teams im gewünschten Kanal einmal den Reiter "
+                "„Aufgaben von Planner und To Do“ hinzufügen, danach steht der Plan hier zur Verfügung."
+            )
+        lines = ["Aufgabenpläne (ID | Name):"]
+        for plan in plans:
+            short = self._short(plan["id"], "p")
+            self._plan_groups[short] = group_id
+            lines.append(f"{short} | {plan.get('title')}")
+        return "\n".join(lines)
+
+    def planner_buckets(self, plan_id: str) -> str:
+        graph_id = self._long(plan_id, "p", "planner_plans")
+        buckets = self.graph.request("GET", f"/planner/plans/{graph_id}/buckets").get("value", [])
+        if not buckets:
+            return "Keine Spalten (Buckets) in diesem Plan."
+        lines = ["Spalten (ID | Name):"]
+        for bucket in buckets:
+            short = self._short(bucket["id"], "b")
+            self._bucket_plans[short] = graph_id
+            lines.append(f"{short} | {bucket.get('name')}")
+        return "\n".join(lines)
+
+    def _bucket_id(self, plan_graph_id: str, name_or_id: str) -> str | None:
+        if not name_or_id:
+            return None
+        try:
+            return self._long(name_or_id, "b", "planner_buckets")
+        except KeyError:
+            pass
+        buckets = self.graph.request("GET", f"/planner/plans/{plan_graph_id}/buckets").get("value", [])
+        for bucket in buckets:
+            if (bucket.get("name") or "").lower() == name_or_id.strip().lower():
+                return bucket["id"]
+        raise KeyError(f"Spalte '{name_or_id}' nicht gefunden. Vorhanden: " + ", ".join(b.get("name", "") for b in buckets))
+
+    def _due_utc(self, due: str) -> str:
+        """YYYY-MM-DD in der lokalen Zeitzone -> UTC-Zeitstempel (12 Uhr mittags, damit das Datum nicht springt)."""
+        day = datetime.fromisoformat(due).replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=self.tz)
+        return day.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def planner_tasks(self, plan_id: str, include_completed: bool = False) -> str:
+        graph_id = self._long(plan_id, "p", "planner_plans")
+        tasks = self.graph.request("GET", f"/planner/plans/{graph_id}/tasks").get("value", [])
+        if not include_completed:
+            tasks = [t for t in tasks if (t.get("percentComplete") or 0) < 100]
+        if not tasks:
+            return "Keine offenen Aufgaben in diesem Plan."
+        tasks.sort(key=lambda t: t.get("dueDateTime") or "9999")
+        lines = [f"{len(tasks)} Aufgaben:"]
+        for t in tasks:
+            due = t.get("dueDateTime")
+            due_txt = f" fällig {datetime.fromisoformat(due.replace('Z', '+00:00')).astimezone(self.tz):%d.%m.%Y}" if due else ""
+            mark = "[x]" if (t.get("percentComplete") or 0) >= 100 else "[ ]"
+            who = len(t.get("assignments") or {})
+            assigned = f" ({who} zugewiesen)" if who else ""
+            lines.append(f"{mark} {self._short(t['id'], 'pt')}{due_txt}: {t.get('title')}{assigned}")
+        return "\n".join(lines)
+
+    def planner_add_task(
+        self,
+        plan_id: str,
+        title: str,
+        due: str | None = None,
+        bucket: str | None = None,
+        assign_to: str | None = None,
+        notes: str | None = None,
+    ) -> str:
+        graph_id = self._long(plan_id, "p", "planner_plans")
+        body: dict[str, Any] = {"planId": graph_id, "title": title.strip()}
+        bucket_id = self._bucket_id(graph_id, bucket) if bucket else None
+        if bucket_id:
+            body["bucketId"] = bucket_id
+        if due:
+            body["dueDateTime"] = self._due_utc(due)
+        label = ""
+        if assign_to:
+            person = self._find_user(assign_to)
+            body["assignments"] = {
+                person["id"]: {"@odata.type": "#microsoft.graph.plannerAssignment", "orderHint": " !"}
+            }
+            label = f", zugewiesen an {person['displayName']}"
+            if not self.confirm(f"Aufgabe im Team-Plan anlegen und {person['displayName']} zuweisen?\n{title}"):
+                return "Der Nutzer hat das Anlegen abgelehnt."
+        created = self.graph.request("POST", "/planner/tasks", json=body)
+        if notes:
+            self._set_task_notes(created["id"], notes)
+        return f"Aufgabe angelegt: {created.get('title')} ({self._short(created['id'], 'pt')}){label}."
+
+    def _etag(self, path: str) -> tuple[dict[str, Any], str]:
+        data = self.graph.request("GET", path)
+        etag = data.get("@odata.etag")
+        if not etag:
+            raise RuntimeError(f"Kein Änderungsstempel für {path} erhalten.")
+        return data, etag
+
+    def _set_task_notes(self, task_graph_id: str, notes: str) -> None:
+        _details, etag = self._etag(f"/planner/tasks/{task_graph_id}/details")
+        self.graph.request(
+            "PATCH", f"/planner/tasks/{task_graph_id}/details", json={"description": notes}, headers={"If-Match": etag}
+        )
+
+    def planner_update_task(
+        self, task_id: str, completed: bool | None = None, title: str | None = None, due: str | None = None
+    ) -> str:
+        graph_id = self._long(task_id, "pt", "planner_tasks")
+        patch: dict[str, Any] = {}
+        if completed is not None:
+            patch["percentComplete"] = 100 if completed else 0
+        if title:
+            patch["title"] = title.strip()
+        if due is not None:
+            patch["dueDateTime"] = self._due_utc(due) if due else None
+        if not patch:
+            return "Nichts zu ändern."
+        _task, etag = self._etag(f"/planner/tasks/{graph_id}")
+        self.graph.request("PATCH", f"/planner/tasks/{graph_id}", json=patch, headers={"If-Match": etag})
+        return f"Aufgabe {task_id} aktualisiert."
+
     # --- Teams-Besprechungen -----------------------------------------------
     def teams_meetings(self, days_back: int = 7) -> str:
         end = datetime.now(self.tz)
@@ -970,6 +1098,56 @@ def build_tools(m: M365Tools) -> list[Tool]:
                 ["channel_id", "message"],
             ),
             handler=m.teams_send_channel,
+        ),
+        Tool(
+            name="planner_plans",
+            description=(
+                "Listet die Aufgabenpläne eines Teams (das sind die Aufgaben in den Teams-Kanälen, Reiter „Aufgaben“). "
+                "team_id aus teams_list_teams. Kurz-IDs p1, p2 ..."
+            ),
+            input_schema=schema({"team_id": {"type": "string"}}, ["team_id"]),
+            handler=m.planner_plans,
+        ),
+        Tool(
+            name="planner_buckets",
+            description="Listet die Spalten (Buckets) eines Aufgabenplans. Kurz-IDs b1, b2 ...",
+            input_schema=schema({"plan_id": {"type": "string"}}, ["plan_id"]),
+            handler=m.planner_buckets,
+        ),
+        Tool(
+            name="planner_tasks",
+            description="Zeigt die Aufgaben eines Team-Plans mit Kurz-IDs (pt1, pt2 ...).",
+            input_schema=schema({"plan_id": {"type": "string"}, "include_completed": {"type": "boolean"}}, ["plan_id"]),
+            handler=m.planner_tasks,
+        ),
+        Tool(
+            name="planner_add_task",
+            description=(
+                "Legt eine Aufgabe in einem Team-Plan an (Teams-Kanal-Aufgabe). due als YYYY-MM-DD, bucket als Name "
+                "oder Kurz-ID der Spalte, assign_to als Name oder E-Mail. Zuweisungen bestätigt der Nutzer."
+            ),
+            input_schema=schema(
+                {
+                    "plan_id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "due": {"type": "string"},
+                    "bucket": {"type": "string"},
+                    "assign_to": {"type": "string"},
+                    "notes": {"type": "string"},
+                },
+                ["plan_id", "title"],
+            ),
+            handler=m.planner_add_task,
+        ),
+        Tool(
+            name="planner_update_task",
+            description="Erledigt (completed=true) oder ändert eine Team-Aufgabe. task_id aus planner_tasks.",
+            input_schema=schema(
+                {"task_id": {"type": "string"}, "completed": {"type": "boolean"}, "title": {"type": "string"},
+                 "due": {"type": "string", "description": "YYYY-MM-DD, leer entfernt die Fälligkeit"}},
+                ["task_id"],
+            ),
+            handler=m.planner_update_task,
         ),
         Tool(
             name="teams_meetings",

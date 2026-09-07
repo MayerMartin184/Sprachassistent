@@ -81,3 +81,57 @@ def test_channel_message_needs_known_team():
     assert "gepostet" in m.teams_send_channel("ch1", "Kurzinfo", subject="Status")
     posts = [c for c in m.graph.calls if c[0] == "POST"]
     assert posts[-1][1] == "/teams/team-1/channels/chan-1/messages" and posts[-1][2]["subject"] == "Status"
+
+
+def test_planner_add_task_with_due_bucket_and_assignment():
+    m = _tools({
+        ("GET", "/me"): {"id": "me"},
+        ("GET", "/me/joinedTeams"): {"value": [{"id": "group-1", "displayName": "Elektroplanung"}]},
+        ("GET", "/groups/group-1/planner/plans"): {"value": [{"id": "plan-1", "title": "Projekte"}]},
+        ("GET", "/planner/plans/plan-1/buckets"): {"value": [{"id": "bucket-1", "name": "Diese Woche"}]},
+        ("GET", "/users"): {"value": [{"id": "u2", "displayName": "Anna Schmidt", "mail": "anna@f.de"}]},
+        ("POST", "/planner/tasks"): {"id": "task-1", "title": "Angebot prüfen"},
+        ("GET", "/planner/tasks/task-1/details"): {"@odata.etag": 'W/"1"'},
+    })
+    m.teams_list_teams()
+    assert "p1" in m.planner_plans("tm1")
+    msg = m.planner_add_task("p1", "Angebot prüfen", due="2026-09-11", bucket="Diese Woche", assign_to="Anna", notes="Details")
+    post = [c for c in m.graph.calls if c[0] == "POST" and c[1] == "/planner/tasks"][0][2]
+    assert post["planId"] == "plan-1" and post["bucketId"] == "bucket-1"
+    assert post["dueDateTime"].startswith("2026-09-11") and post["dueDateTime"].endswith("Z")
+    assert "u2" in post["assignments"] and "Anna Schmidt" in msg
+    assert any(c[0] == "PATCH" and c[1].endswith("/details") for c in m.graph.calls)
+
+
+def test_planner_task_needs_confirmation_for_assignment():
+    m = _tools({
+        ("GET", "/me/joinedTeams"): {"value": [{"id": "group-1", "displayName": "T"}]},
+        ("GET", "/groups/group-1/planner/plans"): {"value": [{"id": "plan-1", "title": "P"}]},
+        ("GET", "/users"): {"value": [{"id": "u2", "displayName": "Anna", "mail": "a@f.de"}]},
+    }, confirm=lambda _m: False)
+    m.teams_list_teams(); m.planner_plans("tm1")
+    assert "abgelehnt" in m.planner_add_task("p1", "Aufgabe", assign_to="Anna")
+    assert not [c for c in m.graph.calls if c[0] == "POST" and c[1] == "/planner/tasks"]
+
+
+def test_planner_missing_plan_explains_next_step():
+    m = _tools({
+        ("GET", "/me/joinedTeams"): {"value": [{"id": "group-1", "displayName": "T"}]},
+        ("GET", "/groups/group-1/planner/plans"): {"value": []},
+    })
+    m.teams_list_teams()
+    assert "Reiter" in m.planner_plans("tm1")
+
+
+def test_planner_update_uses_etag():
+    m = _tools({
+        ("GET", "/me/joinedTeams"): {"value": [{"id": "g", "displayName": "T"}]},
+        ("GET", "/groups/g/planner/plans"): {"value": [{"id": "plan-1", "title": "P"}]},
+        ("GET", "/planner/plans/plan-1/tasks"): {"value": [{"id": "task-9", "title": "Offen", "percentComplete": 0}]},
+        ("GET", "/planner/tasks/task-9"): {"@odata.etag": 'W/"7"'},
+    })
+    m.teams_list_teams(); m.planner_plans("tm1")
+    assert "pt1" in m.planner_tasks("p1")
+    assert "aktualisiert" in m.planner_update_task("pt1", completed=True)
+    patch = [c for c in m.graph.calls if c[0] == "PATCH"][0]
+    assert patch[1] == "/planner/tasks/task-9" and patch[2] == {"percentComplete": 100}
