@@ -93,6 +93,7 @@ class Api:
             end_silence_ms=self.s.speech_end_silence_ms, vad_threshold=self.s.vad_threshold,
             attention_ms=self.s.attention_seconds * 1000,
             on_ambient=lambda wavs: self.ambient.submit(wavs) if self.ambient is not None else None,
+            on_barge_in=lambda: self.assistant.stop_speaking() if self.assistant is not None else None,
         )
         self.listener.ambient = self.s.ambient_listening
         self._state, self._status = "loading", None
@@ -323,10 +324,25 @@ class Api:
             "threshold": self.s.wake_word_threshold,
             "messages": messages,
             "busy": self._busy,
-            "mic": {"enabled": self.listener is not None, "on": self._mic_on},
+            "mic": {
+                "enabled": self.listener is not None,
+                "on": self._mic_on,
+                "problem": self._mic_problem(),
+            },
             "ambient": {"available": self.ambient is not None, "on": bool(self.ambient and self.ambient.enabled)},
             "confirm": confirm,
         }
+
+    def _mic_problem(self) -> str | None:
+        """Meldet, wenn das Mikrofon stumm bleibt oder die Schleife neu gestartet wurde."""
+        if self.listener is None:
+            return None
+        if not self.listener.alive():
+            return "Mikrofon-Überwachung beendet – bitte Jarvis neu starten."
+        healthy, idle = self.listener.health()
+        if not healthy:
+            return f"Kein Mikrofonsignal seit {int(idle)} s – Jarvis versucht einen Neustart."
+        return None
 
     def set_ambient(self, on: bool) -> None:
         from .config import update_env_file
@@ -406,24 +422,42 @@ class Api:
 
         threading.Thread(target=guarded, daemon=True).start()
 
-    def _process_text(self, text: str) -> None:
+    def _process_text(self, text: str, addressed: bool = True) -> None:
         assert self.assistant is not None
-        answer = self.assistant.handle_text(text)
+        answer = self.assistant.handle_text(text, addressed=addressed)
+        if not answer:
+            self._push("System", "Das war offenbar nicht an mich gerichtet – ich habe nichts unternommen.")
+            return
         self._push(self.s.assistant_name, answer)
+        self._speak(answer)
+
+    def _speak(self, answer: str) -> None:
+        """Antwort sprechen. Das Wake-Word bleibt aktiv, damit der Nutzer dazwischenreden kann."""
+        assert self.assistant is not None
         self._set_state("speaking")
-        error = self.assistant.speak(answer)
+        if self.listener is not None:
+            self.listener.speaking = True
+            if self._mic_on:
+                self.listener.resume()
+        try:
+            error = self.assistant.speak(answer)
+        finally:
+            if self.listener is not None:
+                self.listener.speaking = False
         if error:
             self._push("System", error)
 
     def _process_audio(self, wavs: list[bytes]) -> None:
         assert self.assistant is not None
+        addressed = self.listener is None or self.listener.last_trigger == "wake"
         self._set_status("Erkenne Sprache")
         text = self.assistant.transcribe(wavs)
         if not text:
-            self._push("System", "Nichts verstanden.")
+            if addressed:
+                self._push("System", "Nichts verstanden.")
             return
         self._push("Du", text)
-        self._process_text(text)
+        self._process_text(text, addressed=addressed)
 
     def _on_utterance(self, wavs: list[bytes]) -> None:
         self._run(self._process_audio, wavs)
@@ -442,6 +476,9 @@ class Api:
             self._set_state(state)
         elif state == "cancel":
             self._push("System", "Ich habe nichts gehört. Bitte direkt nach dem Ton sprechen.")
+        elif state.startswith("restart:"):
+            self._push("System", f"Mikrofon neu gestartet ({state[8:]}).")
+            self._set_state("listening")
         elif state.startswith("error:"):
             self._push("System", f"Wake-Word-Erkennung nicht verfügbar: {state[6:]}")
             self.listener = None
@@ -456,7 +493,10 @@ class Api:
             try:
                 assert self.assistant is not None
                 for item in self.assistant.reminders.due():
-                    self._announce(f"Erinnerung, die der Nutzer gesetzt hat: „{item['text']}“ (fällig jetzt).")
+                    self._announce(
+                        f"Erinnerung, die der Nutzer gesetzt hat: „{item['text']}“ (fällig jetzt).",
+                        reason="Erinnerung",
+                    )
                 if (
                     self.assistant.m365 is not None and self.assistant.graph is not None
                     and self.assistant.graph.has_account() and time.time() - last_calendar >= 60
@@ -469,15 +509,19 @@ class Api:
                         self._announced_events.add(key)
                         minutes = max(1, int((ev["start"] - datetime.now(ev["start"].tzinfo)).total_seconds() // 60))
                         where = f", Ort: {ev['location']}" if ev.get("location") else (" (Teams)" if ev.get("online") else "")
-                        self._announce(f"In {minutes} Minuten beginnt der Termin „{ev['subject']}“{where}.")
+                        self._announce(
+                            f"In {minutes} Minuten beginnt der Termin „{ev['subject']}“{where}.",
+                            reason="Termin steht an",
+                        )
             except Exception as exc:  # noqa: BLE001
                 log.warning("Scheduler: %s", exc)
             time.sleep(20)
 
     def _on_presence_event(self, kind: str, description: str, jpeg: bytes | None) -> None:
-        self._announce(description, jpeg)
+        label = "Präsenz-Kommentar" if kind == "visitor" else "Präsenz: du bist zurück"
+        self._announce(description, jpeg, reason=f"{label} – abschaltbar in den Einstellungen")
 
-    def _announce(self, description: str, jpeg: bytes | None = None) -> None:
+    def _announce(self, description: str, jpeg: bytes | None = None, reason: str = "Hinweis") -> None:
         """Lässt den Agenten eine kurze Meldung formulieren und spricht sie, sobald nichts anderes läuft."""
         if self.assistant is None:
             return
@@ -493,11 +537,8 @@ class Api:
                     self.listener.pause()
                 self._set_state("processing")
                 text = self.assistant.handle_event(description, jpeg)
-                self._push(self.s.assistant_name, text)
-                self._set_state("speaking")
-                error = self.assistant.speak(text)
-                if error:
-                    self._push("System", error)
+                self._push(f"{self.s.assistant_name} · {reason}", text)
+                self._speak(text)
             except Exception as exc:  # noqa: BLE001
                 log.exception("Proaktive Meldung fehlgeschlagen")
                 self._push("System", f"Meldung fehlgeschlagen: {exc}")

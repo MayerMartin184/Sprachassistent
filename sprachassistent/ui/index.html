@@ -385,6 +385,7 @@ const ui = (() => {
       if (r.mic) mic(r.mic.enabled, r.mic.on);
       ambient(r.ambient);
       showConfirm(r.confirm);
+      if (r.mic && r.mic.problem) { $("meter").textContent = "⚠ " + r.mic.problem; return; }
       $("meter").textContent = (r.score === null || r.score === undefined || r.threshold === undefined) ? "" :
         `PEGEL ${Math.round(r.level*100)}%  ·  ERKENNUNG ${r.score.toFixed(2)} / ${r.threshold.toFixed(2)}`;
     } catch (err) { /* Python noch nicht bereit */ }

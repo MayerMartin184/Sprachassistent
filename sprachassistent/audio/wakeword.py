@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -134,10 +135,16 @@ class WakeWordListener:
         vad_threshold: float = 0.5,
         attention_ms: int = 20000,
         on_ambient: Callable[[list[bytes]], None] | None = None,
+        on_barge_in: Callable[[], None] | None = None,
     ) -> None:
         self.on_utterance = on_utterance
         self.on_ambient = on_ambient
+        self.on_barge_in = on_barge_in  # Wake-Word während der Sprachausgabe: Ausgabe abbrechen
         self.ambient = False  # Mithör-Modus: Sprache im Raum ohne Wake-Word mitschneiden
+        self.speaking = False  # Jarvis spricht gerade: nur Wake-Word annehmen, nichts mitschneiden
+        self.last_trigger = "wake"  # "wake" oder "attention" – woher die letzte Aufnahme kam
+        self.last_frame_at = 0.0  # Zeitstempel des letzten Mikrofon-Frames (Überwachung)
+        self.restarts = 0
         self.on_state = on_state
         self.model_name = model_name
         self.threshold = threshold
@@ -189,6 +196,16 @@ class WakeWordListener:
     def attentive(self) -> bool:
         return self._attention_left > 0
 
+    def health(self) -> tuple[bool, float]:
+        """(in Ordnung, Sekunden seit dem letzten Mikrofon-Frame). Pausiert gilt immer als in Ordnung."""
+        if self._paused.is_set() or self.last_frame_at == 0.0:
+            return True, 0.0
+        idle = time.time() - self.last_frame_at
+        return idle < 10.0, idle
+
+    def alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
     @property
     def paused(self) -> bool:
         return self._paused.is_set()
@@ -211,101 +228,119 @@ class WakeWordListener:
             self.on_state(f"error:{exc}")
             return
 
+        while not self._stop.is_set():
+            try:
+                self._session(model, vad, np, sd)
+                return  # sauber beendet
+            except Exception as exc:  # noqa: BLE001 - Mikrofon abgezogen, Treiberfehler, Gerät belegt
+                if self._stop.is_set():
+                    return
+                self.restarts += 1
+                log.warning("Mikrofon-Sitzung abgebrochen (%s) – Neustart %s in 3 s", exc, self.restarts)
+                self.on_state(f"restart:{exc}")
+                if self._stop.wait(3):
+                    return
+
+    def _session(self, model, vad, np, sd) -> None:  # noqa: ANN001
+        """Eine Mikrofon-Sitzung. Bei einer Ausnahme startet _run sie neu, damit das Mikrofon nicht stumm bleibt."""
         segment: UtteranceSegmenter | None = None
         ambient_seg: UtteranceSegmenter | None = None
         ambient_run = 0
         was_paused = False
-        try:
-            with sd.RawInputStream(
-                samplerate=SAMPLE_RATE, blocksize=FRAME_SAMPLES, channels=1, dtype="int16", device=self.device
-            ) as stream:
-                try:
-                    self.device_name = sd.query_devices(stream.device)["name"]
-                except Exception:  # noqa: BLE001
-                    self.device_name = str(stream.device)
-                self.on_state("listening")
-                while not self._stop.is_set():
-                    data, _overflow = stream.read(FRAME_SAMPLES)
-                    frame = bytes(data)
-                    if self._paused.is_set():
-                        was_paused = True
-                        segment = None
-                        ambient_seg = None
-                        continue
-                    if was_paused:
-                        was_paused = False
-                        model.reset()
-                        self.on_state("attentive" if self._attention_left > 0 else "listening")
-                    samples = np.frombuffer(frame, dtype=np.int16)
-                    level = rms(frame)
-                    self.level = max(0.0, min(1.0, (level - self._noise) / max(self._noise * 6.0, 1500.0)))
+        with sd.RawInputStream(
+            samplerate=SAMPLE_RATE, blocksize=FRAME_SAMPLES, channels=1, dtype="int16", device=self.device
+        ) as stream:
+            try:
+                self.device_name = sd.query_devices(stream.device)["name"]
+            except Exception:  # noqa: BLE001
+                self.device_name = str(stream.device)
+            self.on_state("listening")
+            while not self._stop.is_set():
+                data, _overflow = stream.read(FRAME_SAMPLES)
+                frame = bytes(data)
+                self.last_frame_at = time.time()
+                if self._paused.is_set():
+                    was_paused = True
+                    segment = None
+                    ambient_seg = None
+                    continue
+                if was_paused:
+                    was_paused = False
+                    model.reset()
+                    self.on_state("attentive" if self._attention_left > 0 else "listening")
+                samples = np.frombuffer(frame, dtype=np.int16)
+                level = rms(frame)
+                self.level = max(0.0, min(1.0, (level - self._noise) / max(self._noise * 6.0, 1500.0)))
 
-                    if segment is None and self._attention_left > 0:
-                        # Nachfrage-Fenster: Sprache startet die Aufnahme direkt, ohne Wake-Word
-                        self._attention_left -= FRAME_MS
-                        speech_prob = float(vad.predict(samples, frame_size=640))
-                        self.level = max(self.level, speech_prob * 0.6)
-                        self._speech_run = self._speech_run + FRAME_MS if speech_prob >= self.vad_threshold else 0
-                        if self._speech_run >= 240:
-                            self._attention_left = 0
-                            self.on_state("wake")
-                            segment = UtteranceSegmenter(vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms, discard_ms=0)
-                            for _ in range(3):  # die bereits gehörten Sprachframes gehören dazu
-                                segment.feed(frame, speech_prob)
-                        elif self._attention_left <= 0:
-                            model.reset()
-                            self.on_state("listening")
-                        continue
-
-                    if segment is None:
-                        self._noise = 0.97 * self._noise + 0.03 * level
-                        score = float(model.predict(samples)[self.model_name])
-                        self._score_frames += 1
-                        if score >= self.score or self._score_frames >= 25:  # ~2 s Haltezeit
-                            self.score, self._score_frames = score, 0
-                        if score >= self.threshold:
-                            model.reset()
-                            ambient_seg = None  # der Befehl gehört nicht ins Protokoll
-                            self.on_state("wake")
-                            segment = UtteranceSegmenter(vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms)
-                            continue
-                        if self.ambient and self.on_ambient is not None:
-                            prob = float(vad.predict(samples, frame_size=640))
-                            if ambient_seg is None:
-                                ambient_run = ambient_run + FRAME_MS if prob >= self.vad_threshold else 0
-                                if ambient_run >= 320:
-                                    ambient_seg = UtteranceSegmenter(
-                                        vad_threshold=self.vad_threshold, end_silence_ms=1200, max_ms=25000,
-                                        no_speech_ms=4000, discard_ms=0,
-                                    )
-                                    for _ in range(4):
-                                        ambient_seg.feed(frame, prob)
-                                    ambient_run = 0
-                            else:
-                                result = ambient_seg.feed(frame, prob)
-                                if result == "done":
-                                    self.on_ambient(ambient_seg.wavs())
-                                    ambient_seg = None
-                                elif result == "cancel":
-                                    ambient_seg = None
-                        continue
-
+                if segment is None and self._attention_left > 0 and not self.speaking:
+                    # Nachfrage-Fenster: Sprache startet die Aufnahme direkt, ohne Wake-Word
+                    self._attention_left -= FRAME_MS
                     speech_prob = float(vad.predict(samples, frame_size=640))
                     self.level = max(self.level, speech_prob * 0.6)
-                    result = segment.feed(frame, speech_prob)
-                    if result == "done":
-                        wavs = segment.wavs()
-                        segment = None
-                        self._paused.set()  # bis die Antwort gesprochen ist, nicht erneut auslösen
-                        self.on_state("processing")
-                        self.on_utterance(wavs)
-                    elif result == "cancel":
-                        segment = None
-                        self.on_state("cancel")
+                    self._speech_run = self._speech_run + FRAME_MS if speech_prob >= self.vad_threshold else 0
+                    if self._speech_run >= 240:
+                        self._attention_left = 0
+                        self.last_trigger = "attention"
+                        self.on_state("wake")
+                        segment = UtteranceSegmenter(
+                            vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms, discard_ms=0
+                        )
+                        for _ in range(3):  # die bereits gehörten Sprachframes gehören dazu
+                            segment.feed(frame, speech_prob)
+                    elif self._attention_left <= 0:
+                        model.reset()
                         self.on_state("listening")
-        except Exception as exc:  # noqa: BLE001
-            log.exception("Wake-Word-Schleife abgebrochen")
-            self.on_state(f"error:{exc}")
+                    continue
+
+                if segment is None:
+                    self._noise = 0.97 * self._noise + 0.03 * level
+                    score = float(model.predict(samples)[self.model_name])
+                    self._score_frames += 1
+                    if score >= self.score or self._score_frames >= 25:  # ~2 s Haltezeit
+                        self.score, self._score_frames = score, 0
+                    if score >= self.threshold:
+                        model.reset()
+                        ambient_seg = None  # der Befehl gehört nicht ins Protokoll
+                        self.last_trigger = "wake"
+                        if self.speaking and self.on_barge_in is not None:
+                            self.on_barge_in()  # der Nutzer redet dazwischen: Sprachausgabe abbrechen
+                        self.on_state("wake")
+                        segment = UtteranceSegmenter(vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms)
+                        continue
+                    if self.ambient and not self.speaking and self.on_ambient is not None:
+                        prob = float(vad.predict(samples, frame_size=640))
+                        if ambient_seg is None:
+                            ambient_run = ambient_run + FRAME_MS if prob >= self.vad_threshold else 0
+                            if ambient_run >= 320:
+                                ambient_seg = UtteranceSegmenter(
+                                    vad_threshold=self.vad_threshold, end_silence_ms=1200, max_ms=25000,
+                                    no_speech_ms=4000, discard_ms=0,
+                                )
+                                for _ in range(4):
+                                    ambient_seg.feed(frame, prob)
+                                ambient_run = 0
+                        else:
+                            result = ambient_seg.feed(frame, prob)
+                            if result == "done":
+                                self.on_ambient(ambient_seg.wavs())
+                                ambient_seg = None
+                            elif result == "cancel":
+                                ambient_seg = None
+                    continue
+
+                speech_prob = float(vad.predict(samples, frame_size=640))
+                self.level = max(self.level, speech_prob * 0.6)
+                result = segment.feed(frame, speech_prob)
+                if result == "done":
+                    wavs = segment.wavs()
+                    segment = None
+                    self._paused.set()  # bis die Antwort gesprochen ist, nicht erneut auslösen
+                    self.on_state("processing")
+                    self.on_utterance(wavs)
+                elif result == "cancel":
+                    segment = None
+                    self.on_state("cancel")
+                    self.on_state("listening")
 
 
 def beep_wav(freq: float = 880.0, ms: int = 120, volume: float = 0.3) -> bytes:

@@ -328,10 +328,13 @@ class App:
             self._post(self._log, "System", "Nichts verstanden.")
             return
         self._post(self._log, "Du", text)
-        self._process_text(text)
+        self._process_text(text, addressed=self.listener is None or self.listener.last_trigger == "wake")
 
-    def _process_text(self, text: str) -> None:
-        answer = self.assistant.handle_text(text)
+    def _process_text(self, text: str, addressed: bool = True) -> None:
+        answer = self.assistant.handle_text(text, addressed=addressed)
+        if not answer:
+            self._post(self._log, "System", "Das war offenbar nicht an mich gerichtet.")
+            return
         self._post(self._log, self.name, answer)
         self._post(self._set_state, "speaking")
         error = self.assistant.speak(answer)

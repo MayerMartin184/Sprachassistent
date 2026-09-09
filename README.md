@@ -17,7 +17,9 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen
 - **Präsenz**: erkennt lokal, wenn du zurückkommst oder dich wiederholt jemand unterbricht, und kommentiert gelegentlich
 - **Mithören** (Schalter im Fenster): Gespräche und Sitzungen still mitschreiben, Zusagen und Aufgaben automatisch in To Do, Termine als Erinnerung, Review nach der Sitzung als Datei
-- **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word
+- **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word – nicht an ihn gerichtete Sätze ignoriert er
+- **Dazwischenreden**: „Hey Jarvis“ während der Sprachausgabe bricht sie ab
+- **Selbstheilung**: fällt das Mikrofon aus, startet Jarvis die Aufnahme automatisch neu und zeigt es an
 - **Stimmen-Palette**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
 - **Erstellen**: Word-Dokumente, Excel-Tabellen und PowerPoint-Präsentationen als fertige Dateien
 - **KI-Modelle**: Opus 5, Sonnet 5 oder Haiku 4.5 wählbar, Denktiefe einstellbar, Zweitmeinung per Werkzeug

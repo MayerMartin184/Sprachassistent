@@ -82,6 +82,13 @@ class Agent:
     def reset(self) -> None:
         self.history.clear()
 
+    def drop_last_exchange(self) -> None:
+        """Letzte Runde (Nutzeräußerung samt Antwort) verwerfen – z. B. wenn sie gar nicht an Jarvis ging."""
+        while self.history and self.history[-1]["role"] != "user":
+            self.history.pop()
+        if self.history:
+            self.history.pop()
+
     def _system(self) -> list[dict[str, Any]]:
         now = datetime.now(self.tz)
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]

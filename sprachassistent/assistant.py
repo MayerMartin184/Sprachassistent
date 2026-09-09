@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Callable
 
 from .agent.agent import Agent
@@ -24,6 +25,7 @@ class Assistant:
         self.settings = settings
         registry = ToolRegistry()
         self.features: list[str] = []
+        self._stop_speaking = threading.Event()
         self.m365: m365.M365Tools | None = None
         self.graph: m365.GraphClient | None = None
 
@@ -119,11 +121,23 @@ class Assistant:
     def capabilities(self) -> str:
         return ", ".join(self.features)
 
-    def handle_text(self, text: str) -> str:
+    def handle_text(self, text: str, addressed: bool = True) -> str:
+        """addressed=False: ohne Wake-Word aufgenommen – Jarvis antwortet nur, wenn er wirklich gemeint ist."""
         text = text.strip()
         if not text:
             return ""
-        return self.agent.run(text)
+        if addressed:
+            return self.agent.run(text)
+        gate = (
+            f"{text}\n\n[Hinweis: Diese Äußerung wurde ohne Wake-Word im Nachfrage-Fenster aufgenommen. "
+            "Antworte nur, wenn sie klar an dich gerichtet ist. Handelt es sich um ein Gespräch mit jemand anderem, "
+            "ein Selbstgespräch, Hintergrundgeräusch oder ein Bruchstück, antworte ausschließlich mit dem Wort IGNORE.]"
+        )
+        answer = self.agent.run(gate)
+        if answer.strip().upper().startswith("IGNORE"):
+            self.agent.drop_last_exchange()
+            return ""
+        return answer
 
     def handle_event(self, description: str, jpeg: bytes | None = None) -> str:
         """Proaktives Ereignis (Erinnerung, Termin, Präsenz) durch den Agenten formulieren lassen."""
@@ -144,12 +158,21 @@ class Assistant:
         parts = [self.speech.transcribe(w) for w in wavs]
         return " ".join(p for p in parts if p).strip()
 
+    def stop_speaking(self) -> None:
+        """Laufende Sprachausgabe abbrechen (der Nutzer redet dazwischen)."""
+        self._stop_speaking.set()
+
     def speak(self, text: str) -> str | None:
-        """Spricht den Text. Rückgabe: None bei Erfolg, sonst eine Fehlerbeschreibung für den Nutzer."""
+        """Spricht den Text. Rückgabe: None bei Erfolg, sonst eine Fehlerbeschreibung für den Nutzer.
+
+        Bricht ab, wenn stop_speaking() gerufen wird, und niemals länger als die Tonlänge plus Puffer –
+        ein hängendes Wiedergabegerät darf Jarvis nicht einfrieren.
+        """
         if self.speech is None or not text:
             return None
-        from .audio.io import play_wav, resolve_device
+        from .audio.io import resolve_device
 
+        self._stop_speaking.clear()
         try:
             audio = self.speech.synthesize(text)
         except Exception as exc:  # noqa: BLE001
@@ -157,8 +180,30 @@ class Assistant:
             return f"Sprachausgabe (Azure) fehlgeschlagen: {exc}"
         try:
             device = resolve_device(self.settings.audio_output_device, "output")
-            play_wav(audio, device)
+            self._play_interruptible(audio, device)
         except Exception as exc:  # noqa: BLE001
             log.exception("Wiedergabe fehlgeschlagen")
-            return f"Wiedergabe fehlgeschlagen: {exc}. Lautsprecher mit AUDIO_OUTPUT_DEVICE in der .env wählen."
+            return f"Wiedergabe fehlgeschlagen: {exc}. Lautsprecher in den Einstellungen wählen."
         return None
+
+    def _play_interruptible(self, wav_bytes: bytes, device: int | None) -> None:
+        import io
+        import time
+        import wave
+
+        import numpy as np
+        import sounddevice as sd
+
+        with wave.open(io.BytesIO(wav_bytes)) as wf:
+            rate = wf.getframerate()
+            data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+        sd.play(data, rate, device=device)
+        deadline = time.monotonic() + len(data) / max(rate, 1) + 10
+        try:
+            while time.monotonic() < deadline and not self._stop_speaking.is_set():
+                stream = sd.get_stream()
+                if stream is None or not stream.active:
+                    return
+                time.sleep(0.05)
+        finally:
+            sd.stop()
