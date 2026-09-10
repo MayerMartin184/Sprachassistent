@@ -231,6 +231,19 @@ class Api:
                 return f"Gespeichert, aber Mikrofon nicht gefunden: {exc}"
         return "Gespeichert und übernommen."
 
+    def test_voice(self) -> str:
+        """Spricht einen Beispielsatz mit der aktuell eingestellten Stimme und meldet Fehler im Klartext."""
+        if self.assistant is None:
+            return "Jarvis startet noch."
+        if self.assistant.speech is None:
+            return "Sprachausgabe ist nicht eingerichtet (Azure-Schlüssel fehlt)."
+        sample = f"Hallo Martin, hier spricht {self.s.assistant_name}. So klinge ich mit dieser Stimme."
+        self._push("System", "Teste die Stimme …")
+        error = self.assistant.speak(sample)
+        message = error or "Die Stimme funktioniert."
+        self._push("System", message)
+        return message
+
     def microsoft_login(self) -> str:
         """Meldet ausdrücklich bei Microsoft an (Windows-Konto, Browser oder Code – je nach Einstellung)."""
         if "file_roots" in values and self.assistant is not None:

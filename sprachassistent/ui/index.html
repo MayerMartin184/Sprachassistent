@@ -172,8 +172,10 @@
     </select></div>
     <div class="field el-only"><label>ElevenLabs-Schlüssel</label><input type="text" id="s_elkey" placeholder="sk_..."></div>
     <div class="field el-only"><label>ElevenLabs-Stimme</label><select id="s_elvoice"></select></div>
+    <div class="field el-only"><label>oder Stimmen-ID</label><input type="text" id="s_elid" placeholder="ID von der ElevenLabs-Seite einfügen"></div>
     <div class="hint el-only" id="s_elstate">Schlüssel eintragen, speichern, Dialog erneut öffnen – dann erscheinen hier die Stimmen deines Kontos. Neue Charakterstimmen legst du auf elevenlabs.io an (Voice Library oder Voice Design), sie tauchen danach in dieser Liste auf.</div>
     <div class="field az-only"><label>Stimme (Azure)</label><select id="s_voice"></select></div>
+    <div class="field"><label>Stimme prüfen</label><div class="range"><button class="btn" id="s_test" type="button">Beispielsatz sprechen</button></div></div>
     <div class="hint az-only">Die mit ★ markierten Charaktere sind nachbearbeitete Standardstimmen (Tonhöhe, Verzerrung, Hall) – klanglich begrenzt. Für echte Charakterstimmen den Anbieter ElevenLabs wählen.</div>
     <div class="field"><label>Sprachen verstehen</label><div class="range" id="s_langs">
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="de-DE"> Deutsch</label>
@@ -311,6 +313,7 @@ const ui = (() => {
     get_settings: () => call("settings"),
     save_settings: async v => (await call("settings", v)).message,
     setup_m365: async () => (await call("setup_m365", {})).message,
+    test_voice: async () => (await call("test_voice", {})).message,
     microsoft_login: async () => (await call("microsoft_login", {})).message,
     microsoft_signout: async () => (await call("microsoft_signout", {})).message,
     config: () => call("config"),
@@ -354,7 +357,11 @@ const ui = (() => {
     $("s_elkey").value = st.elevenlabs_api_key || "";
     $("s_elvoice").innerHTML = "";
     (st.elevenlabs_voices || []).forEach(v => $("s_elvoice").append(new Option(v.name, v.id)));
-    if (st.elevenlabs_voice_id) $("s_elvoice").value = st.elevenlabs_voice_id;
+    $("s_elid").value = "";
+    if (st.elevenlabs_voice_id) {
+      $("s_elvoice").value = st.elevenlabs_voice_id;
+      if ($("s_elvoice").value !== st.elevenlabs_voice_id) $("s_elid").value = st.elevenlabs_voice_id;
+    }
     if (st.elevenlabs_error) $("s_elstate").textContent = "Fehler: " + st.elevenlabs_error;
     else if ((st.elevenlabs_voices || []).length) $("s_elstate").textContent = st.elevenlabs_voices.length + " Stimmen aus deinem Konto. Neue legst du auf elevenlabs.io an (Voice Library oder Voice Design), sie erscheinen dann hier.";
     applyProvider();
@@ -386,11 +393,11 @@ const ui = (() => {
   });
   $("s_msout").addEventListener("click", async () => { $("s_msg").textContent = await api().microsoft_signout(); });
   $("s_m365").addEventListener("click", async () => { $("s_msg").textContent = await api().setup_m365(); $("overlay").classList.remove("open"); });
-  $("s_save").addEventListener("click", async () => {
+  function collectSettings(){
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
-    const msg = await api().save_settings({
+    return {
       tts_provider: $("s_prov").value, elevenlabs_api_key: $("s_elkey").value.trim(),
-      elevenlabs_voice_id: $("s_elvoice").value || "",
+      elevenlabs_voice_id: $("s_elid").value.trim() || $("s_elvoice").value || "",
       file_roots: $("s_roots").value.trim(), ms_login_method: $("s_mslogin").value, ms_login_hint: $("s_mshint").value.trim(),
       assistant_model: $("s_model").value, assistant_effort: $("s_effort").value, ambient_model: $("s_amodel").value,
       audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,
@@ -398,8 +405,15 @@ const ui = (() => {
       presence_enabled: $("s_presence").checked, ambient_extract_minutes: parseInt($("s_amb").value), presence_cooldown_min: parseInt($("s_cool").value),
       speech_languages: [...$("s_langs").querySelectorAll("input:checked")].map(cb => cb.value).join(",") || "de-DE",
       wake_word_threshold: parseFloat($("s_ww").value), speech_end_silence_ms: parseInt($("s_pause").value), vad_threshold: parseFloat($("s_vad").value),
-    });
-    $("s_msg").textContent = msg;
+    };
+  }
+  $("s_save").addEventListener("click", async () => {
+    $("s_msg").textContent = await api().save_settings(collectSettings());
+  });
+  $("s_test").addEventListener("click", async () => {
+    $("s_msg").textContent = "Speichere und teste …";
+    await api().save_settings(collectSettings());
+    $("s_msg").textContent = await api().test_voice();
   });
   async function poll(){
     try {

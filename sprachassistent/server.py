@@ -78,6 +78,9 @@ def make_handler(api: Api):  # noqa: ANN201
                 elif path == "/api/open_settings":
                     api.open_settings()
                     self._json({"ok": True})
+                elif path == "/api/test_voice":
+                    threading.Thread(target=api.test_voice, daemon=True).start()
+                    self._json({"message": "Ich spreche gleich einen Beispielsatz."})
                 elif path == "/api/microsoft_login":
                     threading.Thread(target=api.microsoft_login, daemon=True).start()
                     self._json({"message": "Anmeldung läuft – Anweisungen erscheinen im Verlauf."})
