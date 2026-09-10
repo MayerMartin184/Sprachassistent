@@ -69,6 +69,10 @@ class Agent:
         self.system_text = system_text
         self.model_override = model
         self.effort_override = effort
+        # Websuche und Web-Fetch laufen serverseitig in einem Container. Wird ein Zug pausiert, muss dessen
+        # Kennung bei der Fortsetzung mitgeschickt werden, sonst lehnt die API mit 400 ab.
+        self._container_id: str | None = None
+        self._container_expires: Any = None
 
     @property
     def model(self) -> str:
@@ -81,6 +85,7 @@ class Agent:
     # ------------------------------------------------------------------
     def reset(self) -> None:
         self.history.clear()
+        self._container_id = None
 
     @staticmethod
     def _block_type(block: Any) -> str | None:
@@ -111,7 +116,7 @@ class Agent:
         content = last["content"]
         if isinstance(content, str):
             return False
-        return any(self._block_type(b) == "tool_use" for b in content)
+        return any(self._block_type(b) in ("tool_use", "server_tool_use") for b in content)
 
     def repair_history(self) -> bool:
         """Angebrochene Runden abschneiden, bis der Verlauf wieder sendbar ist. True, wenn etwas entfernt wurde."""
@@ -144,10 +149,28 @@ class Agent:
         blocks.append({"type": "text", "text": f"Aktuell: {weekday}, {now:%d.%m.%Y %H:%M} ({self.tz.key})."})
         return blocks
 
+    def _usable_container(self) -> bool:
+        if not self._container_id:
+            return False
+        expires = self._container_expires
+        if expires is None:
+            return True
+        try:
+            return datetime.now(self.tz) < expires.astimezone(self.tz)
+        except (AttributeError, TypeError, ValueError):
+            return True
+
+    def _remember_container(self, response: Any) -> None:
+        container = getattr(response, "container", None)
+        container_id = getattr(container, "id", None)
+        if container_id:
+            self._container_id = container_id
+            self._container_expires = getattr(container, "expires_at", None)
+
     def _tools(self) -> list[dict[str, Any]]:
         return self.registry.definitions() + server_tools(self.model)
 
-    def run(self, user_content: str | list[dict[str, Any]]) -> str:
+    def run(self, user_content: str | list[dict[str, Any]], _retry: bool = False) -> str:
         """Verarbeitet eine Nutzeräußerung (Text oder Inhaltsblöcke, z. B. mit Bild) bis zur endgültigen Antwort."""
         start = len(self.history)
         self.history.append({"role": "user", "content": user_content})
@@ -160,15 +183,24 @@ class Agent:
             del self.history[start:]
             self.repair_history()
             return "Die Claude-API ist gerade ausgelastet. Bitte in einem Moment erneut versuchen."
+        except anthropic.BadRequestError as exc:
+            del self.history[start:]
+            self.repair_history()
+            if not _retry and "container" in str(exc.message).lower():
+                # Container abgelaufen oder unbekannt: ohne ihn und mit bereinigtem Verlauf noch einmal versuchen
+                log.warning("Container verworfen und Anfrage wiederholt: %s", exc.message)
+                self._container_id, self._container_expires = None, None
+                return self.run(user_content, _retry=True)
+            log.error("API-Fehler 400: %s", exc.message)
+            detail = " ".join(str(exc.message).split())[:200]
+            return f"Die Claude-API hat die Anfrage abgelehnt: {detail}"
         except anthropic.APIStatusError as exc:
             del self.history[start:]
             repaired = self.repair_history()
             log.error("API-Fehler %s: %s", exc.status_code, exc.message)
             detail = " ".join(str(exc.message).split())[:200]
-            if exc.status_code == 400:
-                if repaired:
-                    return "Der Gesprächsverlauf war beschädigt und wurde bereinigt. Bitte sag den letzten Satz noch einmal."
-                return f"Die Claude-API hat die Anfrage abgelehnt: {detail}"
+            if repaired:
+                return "Der Gesprächsverlauf war beschädigt und wurde bereinigt. Bitte sag den letzten Satz noch einmal."
             return f"Die Claude-API hat einen Fehler gemeldet ({exc.status_code}): {detail}"
         except anthropic.APIConnectionError:
             del self.history[start:]
@@ -183,14 +215,18 @@ class Agent:
     def _loop(self) -> str:
         for _ in range(self.settings.max_tool_rounds):
             self.on_status("Denke nach …")
+            extras = request_extras(self.model, self.effort)
+            if self._usable_container():
+                extras["container"] = self._container_id
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=16000,
                 system=self._system(),
                 tools=self._tools(),
                 messages=self.history,
-                **request_extras(self.model, self.effort),
+                **extras,
             )
+            self._remember_container(response)
             self.history.append({"role": "assistant", "content": response.content})
 
             if response.stop_reason == "refusal":
