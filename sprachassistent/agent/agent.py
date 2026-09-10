@@ -17,6 +17,33 @@ log = logging.getLogger(__name__)
 
 StatusCallback = Callable[[str], None]
 
+# Klartext für die Statuszeile: was gerade läuft
+TOOL_ACTIVITY: list[tuple[str, str]] = [
+    ("web_search", "Suche im Web"), ("web_fetch", "Lese eine Webseite"),
+    ("mail_send", "Bereite den Mailversand vor"), ("mail_reply", "Bereite die Antwort vor"), ("mail_", "Sehe die Mails durch"),
+    ("calendar_", "Sehe den Kalender durch"),
+    ("todo_", "Arbeite in Microsoft To Do"), ("planner_", "Arbeite an den Team-Aufgaben"),
+    ("teams_chat", "Sehe die Teams-Chats durch"), ("teams_send", "Bereite die Teams-Nachricht vor"),
+    ("teams_transcript", "Lade das Besprechungsprotokoll"), ("teams_", "Sehe Teams durch"),
+    ("files_search", "Durchsuche deine Dateien"), ("files_read", "Lese eine Datei"), ("files_write", "Schreibe eine Datei"),
+    ("files_", "Arbeite mit Dateien"),
+    ("create_docx", "Erstelle ein Word-Dokument"), ("create_xlsx", "Erstelle eine Excel-Tabelle"),
+    ("create_pptx", "Erstelle eine Präsentation"),
+    ("memory_", "Sehe im Gedächtnis nach"), ("reminder_", "Arbeite an den Erinnerungen"),
+    ("list_", "Arbeite an deinen Listen"), ("task_", "Arbeite an den Aufgaben"),
+    ("screen_capture", "Sehe auf deinen Bildschirm"), ("webcam_", "Sehe durch die Kamera"),
+    ("app_open", "Starte ein Programm"), ("url_open", "Öffne eine Webseite"), ("clipboard_", "Nutze die Zwischenablage"),
+    ("ask_model", "Hole eine zweite Meinung"), ("ambient_", "Sehe ins Gesprächsprotokoll"),
+]
+
+
+def activity(tool_name: str) -> str:
+    for prefix, text in TOOL_ACTIVITY:
+        if tool_name.startswith(prefix):
+            return text
+    return f"Führe {tool_name} aus"
+
+
 MODELS: dict[str, str] = {
     "claude-opus-5": "Claude Opus 5 – höchste Qualität (Standard)",
     "claude-sonnet-5": "Claude Sonnet 5 – schnell, sehr gut",
@@ -214,7 +241,7 @@ class Agent:
 
     def _loop(self) -> str:
         for _ in range(self.settings.max_tool_rounds):
-            self.on_status("Denke nach …")
+            self.on_status("Denke nach")
             extras = request_extras(self.model, self.effort)
             if self._usable_container():
                 extras["container"] = self._container_id
@@ -240,7 +267,7 @@ class Agent:
 
             results = []
             for block in tool_uses:
-                self.on_status(f"Werkzeug: {block.name}")
+                self.on_status(activity(block.name))
                 content, is_error = self.registry.execute(block.name, dict(block.input))
                 preview = content[:200] if isinstance(content, str) else f"{len(content)} Inhaltsblöcke"
                 log.info("Werkzeug %s -> %s%s", block.name, "FEHLER: " if is_error else "", preview)

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Claude
     anthropic_api_key: str | None = None  # None -> SDK-Standardauflösung (ANTHROPIC_API_KEY, ant auth login)
     assistant_model: str = "claude-opus-5"
-    assistant_effort: str = "medium"
+    assistant_effort: str = "low"  # Sprachdialog: kurze Wartezeit; für schwere Fragen nutzt Jarvis ask_model
     ambient_model: str | None = None  # Modell für den stillen Mithör-Helfer; leer = wie assistant_model
     max_tool_rounds: int = 30
 

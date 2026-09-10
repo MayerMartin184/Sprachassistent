@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 from typing import Callable
 
 from .agent.agent import Agent
@@ -77,6 +78,7 @@ class Assistant:
                 voice_preset=settings.tts_preset,
                 voice=settings.tts_voice,
             )
+            self._register_language_tool()  # erst wenn self.speech steht
             self.features.append(f"Sprache (Wake-Word „Hey {settings.assistant_name}“)" if settings.wake_word_enabled else "Sprache")
         else:
             self.features.append("nur Text")
@@ -102,6 +104,33 @@ class Assistant:
             handler=lambda question, model="claude-opus-5", effort="high": self.agent.ask(model, question, effort),
         ))
         self.features.append("Dokumente (Word, Excel, PowerPoint)")
+
+    def _register_language_tool(self) -> None:
+        from .tools.base import Tool, schema
+
+        names = {"de-DE": "Deutsch", "ro-RO": "Rumänisch", "en-US": "Englisch"}
+
+        def switch(language: str) -> str:
+            if language not in names:
+                return f"Unbekannte Sprache. Möglich: {', '.join(names)}."
+            if self.speech is None:
+                return "Sprache ist nicht eingerichtet."
+            self.speech.languages = [language]
+            self.settings.speech_languages = language
+            from .config import update_env_file
+
+            update_env_file(Path(self.settings.env_file_in_use() or ".env"), {"SPEECH_LANGUAGES": language})
+            return f"Erkennung auf {names[language]} umgestellt. Ich antworte ab jetzt auf {names[language]}."
+
+        self.registry.register(Tool(
+            name="speech_set_language",
+            description=(
+                "Stellt die Spracherkennung fest auf eine Sprache um (de-DE, ro-RO, en-US). Nutze das, wenn der Nutzer "
+                "sagt „sprich rumänisch“, „auf Deutsch weiter“ o. Ä. Eine einzelne Sprache wird deutlich zuverlässiger erkannt."
+            ),
+            input_schema=schema({"language": {"type": "string", "enum": list(names)}}, ["language"]),
+            handler=switch,
+        ))
 
     def register_ambient(self, recorder) -> None:  # noqa: ANN001
         """Werkzeug, mit dem der Agent das heutige Gesprächsprotokoll lesen kann."""

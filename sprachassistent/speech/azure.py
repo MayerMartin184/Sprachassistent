@@ -166,7 +166,8 @@ class AzureSpeech:
         raise RuntimeError(f"Spracherkennung fehlgeschlagen: {status}")
 
     def transcribe(self, wav_bytes: bytes) -> str:
-        """Erkennt in allen konfigurierten Sprachen parallel und nimmt das sicherste Ergebnis."""
+        """Erkennt in den eingestellten Sprachen. Bei mehreren gewinnt die erste Sprache, sofern sie nicht
+        deutlich schlechter abschneidet – sonst kippt die Erkennung bei jedem Nebengeräusch in die falsche Sprache."""
         if len(self.languages) == 1:
             text, _ = self._recognize(wav_bytes, self.languages[0])
             return text
@@ -174,10 +175,14 @@ class AzureSpeech:
 
         with ThreadPoolExecutor(max_workers=len(self.languages)) as pool:
             results = list(pool.map(lambda lang: (lang, *self._recognize(wav_bytes, lang)), self.languages))
-        lang, text, _conf = max(results, key=lambda r: r[2])
-        if text:
-            self.last_language = lang
-        return text
+        primary = results[0]
+        best = max(results, key=lambda r: (r[2], len(r[1].split())))
+        winner = best if (best[2] >= primary[2] + 0.15 and best[1]) else primary
+        if not winner[1] and best[1]:
+            winner = best
+        if winner[1]:
+            self.last_language = winner[0]
+        return winner[1]
 
     # --- Ausgabe ------------------------------------------------------------
     def synthesize(self, text: str) -> bytes:

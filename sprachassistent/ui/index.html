@@ -160,7 +160,7 @@
       <option value="low">niedrig – schnellste Antworten</option><option value="medium">mittel – ausgewogen (Standard)</option>
       <option value="high">hoch – gründlicher</option><option value="xhigh">sehr hoch – anspruchsvolle Aufgaben</option><option value="max">maximal – wenn Richtigkeit alles ist</option>
     </select></div>
-    <div class="hint">Opus 5 denkt am besten, Sonnet 5 antwortet schneller, Haiku 4.5 ist für einfache Aufgaben. Für schwere Fragen holt sich Jarvis von selbst eine Zweitmeinung bei Opus 5. Höhere Denktiefe kostet Zeit und Tokens.</div>
+    <div class="hint">Für flüssige Gespräche: Opus 5 mit Denktiefe „niedrig“. Noch schneller wird es mit Sonnet 5. Für schwere Fragen holt sich Jarvis von selbst eine Zweitmeinung bei Opus 5 mit hoher Denktiefe – höhere Denktiefe hier kostet bei jeder Antwort Wartezeit.</div>
     <div class="field"><label>Modell Mithören</label><select id="s_amodel"></select></div>
     <div class="hint">Der stille Mithör-Helfer läuft oft; ein schnelleres Modell spart hier deutlich Kosten.</div>
     <div class="field"><label>Mikrofon</label><select id="s_in"></select></div>
@@ -172,8 +172,9 @@
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="ro-RO"> Rumänisch</label>
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="en-US"> Englisch</label>
     </div></div>
+    <div class="hint">Mehrere Sprachen gleichzeitig erkennen ist ungenau: Rumänisch wird dann oft als Deutsch gehört. Für zuverlässiges Rumänisch nur Rumänisch anhaken – oder im Gespräch sagen „Hey Jarvis, sprich rumänisch“, dann stellt er selbst um. Als Stimme dafür Seraphina oder Florian wählen.</div>
     <div class="field"><label>Aufmerksam bleiben</label><div class="range"><input type="range" id="s_att" min="0" max="60" step="5"><span class="val" id="v_att"></span></div></div>
-    <div class="hint">Nach einer Antwort hört Jarvis so lange ohne „Hey Jarvis“ weiter zu. 0 = immer Wake-Word nötig.</div>
+    <div class="hint">Nur nach einer Rückfrage von Jarvis hört er so lange ohne „Hey Jarvis“ weiter zu, und er antwortet nur, wenn du wirklich ihn meinst. 0 = immer Wake-Word nötig.</div>
     <div class="field"><label>Wake-Word-Schwelle</label><div class="range"><input type="range" id="s_ww" min="0.2" max="0.8" step="0.05"><span class="val" id="v_ww"></span></div></div>
     <div class="hint">Niedriger = springt leichter an (mehr Fehlauslösungen), höher = strenger.</div>
     <div class="field"><label>Pause bis Absenden</label><div class="range"><input type="range" id="s_pause" min="800" max="3000" step="100"><span class="val" id="v_pause"></span></div></div>

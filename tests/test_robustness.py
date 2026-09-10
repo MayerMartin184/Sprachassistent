@@ -142,3 +142,37 @@ def test_ignored_utterance_after_tool_use_keeps_history_sendable():
     agent.drop_last_exchange()
     assert not agent._incomplete()
     assert all(agent._block_type(b) != "tool_use" for m in agent.history if isinstance(m["content"], list) for b in m["content"])
+
+
+def test_attention_window_only_after_a_question():
+    from sprachassistent.webapp import Api
+
+    assert Api._expects_answer("Bis wann soll ich das einplanen?")
+    assert not Api._expects_answer("Ich habe die Aufgabe angelegt.")
+    assert not Api._expects_answer("Erledigt. Sag Bescheid, wenn noch etwas fehlt.")
+
+
+def test_recognition_prefers_primary_language_unless_clearly_better():
+    from sprachassistent.speech.azure import AzureSpeech
+
+    speech = AzureSpeech("k", "r", languages=["de-DE", "ro-RO"])
+    results = {"de-DE": ("Wir müssen das machen", 0.82), "ro-RO": ("Vrem sa facem", 0.80)}
+    speech._recognize = lambda _w, lang: results[lang]  # type: ignore[assignment]
+    assert speech.transcribe(b"x") == "Wir müssen das machen"  # knapper Vorsprung zählt nicht
+
+    results["ro-RO"] = ("Trebuie sa facem asta maine", 0.97)
+    assert speech.transcribe(b"x") == "Trebuie sa facem asta maine"  # deutlich besser gewinnt
+    assert speech.last_language == "ro-RO"
+
+    results["de-DE"] = ("", 0.0)  # Deutsch versteht nichts
+    results["ro-RO"] = ("Buna ziua", 0.4)
+    assert speech.transcribe(b"x") == "Buna ziua"
+
+
+def test_activity_labels_are_plain_german():
+    from sprachassistent.agent.agent import activity
+
+    assert activity("web_search") == "Suche im Web"
+    assert activity("planner_add_task") == "Arbeite an den Team-Aufgaben"
+    assert activity("files_search") == "Durchsuche deine Dateien"
+    assert activity("irgendwas_neues").startswith("Führe")

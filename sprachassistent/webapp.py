@@ -44,6 +44,7 @@ class Api:
         self.assistant: Assistant | None = None
         self.presence = None
         self.ambient = None
+        self._attentive_next = False  # nach einer Rückfrage kurz ohne Wake-Word zuhören
         self._announced_events: set[str] = set()
         self._announce_lock = threading.Lock()
 
@@ -416,9 +417,10 @@ class Api:
             finally:
                 self._busy = False
                 if self.listener is not None and self._mic_on:
-                    self.listener.resume(attentive=self.s.attention_seconds > 0)
+                    self.listener.resume(attentive=self._attentive_next and self.s.attention_seconds > 0)
                 else:
                     self._set_state("idle")
+                self._attentive_next = False
 
         threading.Thread(target=guarded, daemon=True).start()
 
@@ -431,9 +433,15 @@ class Api:
         self._push(self.s.assistant_name, answer)
         self._speak(answer)
 
+    @staticmethod
+    def _expects_answer(text: str) -> bool:
+        """Nur nach einer echten Rückfrage bleibt Jarvis ohne Wake-Word aufmerksam."""
+        return text.rstrip().endswith("?")
+
     def _speak(self, answer: str) -> None:
         """Antwort sprechen. Das Wake-Word bleibt aktiv, damit der Nutzer dazwischenreden kann."""
         assert self.assistant is not None
+        self._attentive_next = self._expects_answer(answer)
         self._set_state("speaking")
         if self.listener is not None:
             self.listener.speaking = True
@@ -545,9 +553,10 @@ class Api:
             finally:
                 self._busy = False
                 if self.listener is not None and self._mic_on:
-                    self.listener.resume(attentive=self.s.attention_seconds > 0)
+                    self.listener.resume(attentive=self._attentive_next and self.s.attention_seconds > 0)
                 else:
                     self._set_state("idle")
+                self._attentive_next = False
 
     # --- Helfer ------------------------------------------------------------
     def _push(self, who: str, text: str) -> None:
