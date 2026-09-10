@@ -82,12 +82,56 @@ class Agent:
     def reset(self) -> None:
         self.history.clear()
 
+    @staticmethod
+    def _block_type(block: Any) -> str | None:
+        return block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+
+    def _turn_starts(self) -> list[int]:
+        """Positionen echter Nutzer-Runden. Werkzeug-Ergebnisse haben zwar die Rolle „user“, sind aber keine."""
+        starts = []
+        for i, message in enumerate(self.history):
+            if message["role"] != "user":
+                continue
+            content = message["content"]
+            if isinstance(content, str):
+                starts.append(i)
+                continue
+            first = content[0] if content else None
+            if self._block_type(first) != "tool_result":
+                starts.append(i)
+        return starts
+
+    def _incomplete(self) -> bool:
+        """Endet der Verlauf mitten in einer Runde? Dann lehnt die API die nächste Anfrage ab."""
+        if not self.history:
+            return False
+        last = self.history[-1]
+        if last["role"] != "assistant":
+            return True  # offene Nutzeräußerung oder Werkzeug-Ergebnis ohne Antwort
+        content = last["content"]
+        if isinstance(content, str):
+            return False
+        return any(self._block_type(b) == "tool_use" for b in content)
+
+    def repair_history(self) -> bool:
+        """Angebrochene Runden abschneiden, bis der Verlauf wieder sendbar ist. True, wenn etwas entfernt wurde."""
+        changed = False
+        while self.history and self._incomplete():
+            starts = self._turn_starts()
+            if starts:
+                del self.history[starts[-1] :]
+            else:
+                self.history.clear()
+            changed = True
+        return changed
+
     def drop_last_exchange(self) -> None:
-        """Letzte Runde (Nutzeräußerung samt Antwort) verwerfen – z. B. wenn sie gar nicht an Jarvis ging."""
-        while self.history and self.history[-1]["role"] != "user":
-            self.history.pop()
-        if self.history:
-            self.history.pop()
+        """Letzte Runde (Nutzeräußerung samt Antwort und Werkzeugaufrufen) vollständig verwerfen."""
+        starts = self._turn_starts()
+        if starts:
+            del self.history[starts[-1] :]
+        else:
+            self.history.clear()
 
     def _system(self) -> list[dict[str, Any]]:
         now = datetime.now(self.tz)
@@ -114,13 +158,21 @@ class Agent:
             return "Der Claude-API-Schlüssel ist ungültig oder fehlt. Bitte ANTHROPIC_API_KEY prüfen."
         except anthropic.RateLimitError:
             del self.history[start:]
+            self.repair_history()
             return "Die Claude-API ist gerade ausgelastet. Bitte in einem Moment erneut versuchen."
         except anthropic.APIStatusError as exc:
             del self.history[start:]
+            repaired = self.repair_history()
             log.error("API-Fehler %s: %s", exc.status_code, exc.message)
-            return f"Die Claude-API hat einen Fehler gemeldet ({exc.status_code})."
+            detail = " ".join(str(exc.message).split())[:200]
+            if exc.status_code == 400:
+                if repaired:
+                    return "Der Gesprächsverlauf war beschädigt und wurde bereinigt. Bitte sag den letzten Satz noch einmal."
+                return f"Die Claude-API hat die Anfrage abgelehnt: {detail}"
+            return f"Die Claude-API hat einen Fehler gemeldet ({exc.status_code}): {detail}"
         except anthropic.APIConnectionError:
             del self.history[start:]
+            self.repair_history()
             return "Keine Verbindung zur Claude-API. Bitte Internetverbindung prüfen."
         except TypeError as exc:
             if "authentication" not in str(exc).lower():

@@ -91,3 +91,54 @@ def test_agent_drops_last_exchange():
     ]
     agent.drop_last_exchange()
     assert [m["content"] for m in agent.history] == ["erste Frage", "erste Antwort"]
+
+
+def _agent() -> Agent:
+    return Agent(Settings(_env_file=None), ToolRegistry(), client=SimpleNamespace(messages=None))
+
+
+def _tool_turn() -> list[dict]:
+    """Eine Runde mit Werkzeugaufruf: Frage, tool_use, tool_result, Antwort."""
+    return [
+        {"role": "user", "content": "such mir was"},
+        {"role": "assistant", "content": [SimpleNamespace(type="tool_use", id="t1", name="x", input={})]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+        {"role": "assistant", "content": [SimpleNamespace(type="text", text="gefunden")]},
+    ]
+
+
+def test_drop_last_exchange_removes_whole_tool_round():
+    agent = _agent()
+    agent.history = [{"role": "user", "content": "erste"}, {"role": "assistant", "content": "antwort"}] + _tool_turn()
+    agent.drop_last_exchange()
+    assert [m["content"] for m in agent.history] == ["erste", "antwort"]
+    assert not agent._incomplete()  # Verlauf bleibt sendbar
+
+
+def test_repair_history_cuts_dangling_tool_use():
+    agent = _agent()
+    agent.history = [
+        {"role": "user", "content": "erste"},
+        {"role": "assistant", "content": "antwort"},
+        {"role": "user", "content": "zweite"},
+        {"role": "assistant", "content": [SimpleNamespace(type="tool_use", id="t1", name="x", input={})]},
+    ]
+    assert agent._incomplete() and agent.repair_history()
+    assert [m["content"] for m in agent.history] == ["erste", "antwort"]
+    assert not agent.repair_history()  # nichts mehr zu tun
+
+
+def test_repair_history_handles_trailing_tool_result():
+    agent = _agent()
+    agent.history = _tool_turn()[:3]  # Antwort fehlt
+    assert agent.repair_history() and agent.history == []
+
+
+def test_ignored_utterance_after_tool_use_keeps_history_sendable():
+    """Der Fehler 400: eine verworfene Runde mit Werkzeugaufruf hinterließ einen offenen tool_use."""
+    agent = _agent()
+    agent.history = [{"role": "user", "content": "erste"}, {"role": "assistant", "content": "antwort"}] + _tool_turn()
+    agent.history[-1] = {"role": "assistant", "content": [SimpleNamespace(type="text", text="IGNORE")]}
+    agent.drop_last_exchange()
+    assert not agent._incomplete()
+    assert all(agent._block_type(b) != "tool_use" for m in agent.history if isinstance(m["content"], list) for b in m["content"])
