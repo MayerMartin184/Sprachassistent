@@ -79,6 +79,7 @@
   .dialog{width:min(640px,92vw);max-height:88vh;overflow:auto;background:var(--panel);border:1px solid var(--line);box-shadow:0 0 60px rgba(95,179,191,.15);padding:28px 30px 24px;position:relative}
   .dialog h2{font-family:var(--mono);font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--primary);margin:0 0 22px;display:flex;align-items:center;gap:12px}
   .dialog h2::before{content:"";width:28px;height:1px;background:var(--primary)}
+  .field[style*="none"]{display:none}
   .field{display:grid;grid-template-columns:190px 1fr;gap:14px;align-items:center;margin-bottom:16px}
   .field label{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
   .field select,.field input[type=text]{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);font:500 13px var(--font);padding:10px 12px;outline:none}
@@ -165,8 +166,15 @@
     <div class="hint">Der stille Mithör-Helfer läuft oft; ein schnelleres Modell spart hier deutlich Kosten.</div>
     <div class="field"><label>Mikrofon</label><select id="s_in"></select></div>
     <div class="field"><label>Lautsprecher</label><select id="s_out"></select></div>
-    <div class="field"><label>Stimme</label><select id="s_voice"></select></div>
-    <div class="hint">Mehrsprachige Stimmen sprechen Deutsch, Rumänisch und Englisch. Mit ★ markierte Filmcharaktere werden lokal mit Effekten (Sub-Oktave, Verzerrung, Hall, Ringmodulation) erzeugt.</div>
+    <div class="field"><label>Stimmen-Anbieter</label><select id="s_prov">
+      <option value="azure">Azure (im bestehenden Konto enthalten)</option>
+      <option value="elevenlabs">ElevenLabs (echte Charakterstimmen, eigenes Konto)</option>
+    </select></div>
+    <div class="field el-only"><label>ElevenLabs-Schlüssel</label><input type="text" id="s_elkey" placeholder="sk_..."></div>
+    <div class="field el-only"><label>ElevenLabs-Stimme</label><select id="s_elvoice"></select></div>
+    <div class="hint el-only" id="s_elstate">Schlüssel eintragen, speichern, Dialog erneut öffnen – dann erscheinen hier die Stimmen deines Kontos. Neue Charakterstimmen legst du auf elevenlabs.io an (Voice Library oder Voice Design), sie tauchen danach in dieser Liste auf.</div>
+    <div class="field az-only"><label>Stimme (Azure)</label><select id="s_voice"></select></div>
+    <div class="hint az-only">Die mit ★ markierten Charaktere sind nachbearbeitete Standardstimmen (Tonhöhe, Verzerrung, Hall) – klanglich begrenzt. Für echte Charakterstimmen den Anbieter ElevenLabs wählen.</div>
     <div class="field"><label>Sprachen verstehen</label><div class="range" id="s_langs">
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="de-DE"> Deutsch</label>
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="ro-RO"> Rumänisch</label>
@@ -331,12 +339,25 @@ const ui = (() => {
     const match = [...sel.options].find(o => o.value !== "" && (String(o.value) === String(current) || (current && o.text.toLowerCase().includes(String(current).toLowerCase()))));
     sel.value = match ? match.value : "";
   };
+  function applyProvider(){
+    const eleven = $("s_prov").value === "elevenlabs";
+    document.querySelectorAll(".el-only").forEach(el => el.style.display = eleven ? "" : "none");
+    document.querySelectorAll(".az-only").forEach(el => el.style.display = eleven ? "none" : "");
+  }
   const showVal = (id, out, fmt) => { const el = $(id); const upd = () => $(out).textContent = fmt(el.value); el.addEventListener("input", upd); upd(); };
   async function openSettings(){
     const st = await api().get_settings();
     fill($("s_in"), st.inputs, st.audio_input_device, true);
     fill($("s_out"), st.outputs, st.audio_output_device, true);
     fill($("s_voice"), st.voices, st.tts_preset, false); $("s_voice").value = st.tts_preset;
+    $("s_prov").value = st.tts_provider || "azure";
+    $("s_elkey").value = st.elevenlabs_api_key || "";
+    $("s_elvoice").innerHTML = "";
+    (st.elevenlabs_voices || []).forEach(v => $("s_elvoice").append(new Option(v.name, v.id)));
+    if (st.elevenlabs_voice_id) $("s_elvoice").value = st.elevenlabs_voice_id;
+    if (st.elevenlabs_error) $("s_elstate").textContent = "Fehler: " + st.elevenlabs_error;
+    else if ((st.elevenlabs_voices || []).length) $("s_elstate").textContent = st.elevenlabs_voices.length + " Stimmen aus deinem Konto. Neue legst du auf elevenlabs.io an (Voice Library oder Voice Design), sie erscheinen dann hier.";
+    applyProvider();
     $("s_model").innerHTML = ""; st.models.forEach(m => $("s_model").append(new Option(m.name, m.id))); $("s_model").value = st.assistant_model;
     $("s_effort").value = st.assistant_effort;
     $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Hauptmodell", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
@@ -356,6 +377,7 @@ const ui = (() => {
     $("s_msg").textContent = ""; $("overlay").classList.add("open");
   }
   $("settings").addEventListener("click", openSettings);
+  $("s_prov").addEventListener("change", applyProvider);
   $("s_cancel").addEventListener("click", () => $("overlay").classList.remove("open"));
   $("s_env").addEventListener("click", () => api().open_settings());
   $("s_mslogin_go").addEventListener("click", async () => {
@@ -367,6 +389,8 @@ const ui = (() => {
   $("s_save").addEventListener("click", async () => {
     const nameOf = sel => sel.value === "" ? "" : sel.options[sel.selectedIndex].text.replace(/\s+\(Standard\)$/, "");
     const msg = await api().save_settings({
+      tts_provider: $("s_prov").value, elevenlabs_api_key: $("s_elkey").value.trim(),
+      elevenlabs_voice_id: $("s_elvoice").value || "",
       file_roots: $("s_roots").value.trim(), ms_login_method: $("s_mslogin").value, ms_login_hint: $("s_mshint").value.trim(),
       assistant_model: $("s_model").value, assistant_effort: $("s_effort").value, ambient_model: $("s_amodel").value,
       audio_input_device: nameOf($("s_in")), audio_output_device: nameOf($("s_out")), tts_preset: $("s_voice").value,

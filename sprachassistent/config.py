@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     azure_speech_key: str | None = None
     azure_speech_region: str | None = None
     speech_languages: str = "de-DE,ro-RO"  # Erkennung parallel in diesen Sprachen, das sicherste Ergebnis gewinnt
+    tts_provider: str = "azure"  # azure | elevenlabs
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str | None = None
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_stability: float = 0.4
+    elevenlabs_similarity: float = 0.75
+    elevenlabs_style: float = 0.0
     tts_preset: str = "seraphina"  # Schlüssel aus der Stimmen-Palette (speech/azure.py)
     tts_voice: str | None = None  # optionale explizite Azure-Stimme, überstimmt die Palette
     attention_seconds: int = 20  # nach einer Antwort so lange ohne Wake-Word zuhören
@@ -96,7 +103,7 @@ class Settings(BaseSettings):
             return Path(value).expanduser() if value.strip() else None
         return value
 
-    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", "ambient_model", "ms_login_hint", mode="before")
+    @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", "ambient_model", "ms_login_hint", "elevenlabs_api_key", "elevenlabs_voice_id", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

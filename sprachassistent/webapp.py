@@ -124,9 +124,26 @@ class Api:
                 if replaced:
                     label += f"  [in deiner Region nicht verfügbar, Ersatz: {used.split('-')[-1].replace('Neural', '')}]"
             voices.append({"id": k, "name": label})
+        eleven_voices: list[dict[str, str]] = []
+        eleven_error = ""
+        if s.tts_provider == "elevenlabs" and s.elevenlabs_api_key:
+            try:
+                from .speech.eleven import ElevenLabsSpeech
+
+                source = self.assistant.tts if (self.assistant and self.assistant.tts) else None
+                if not isinstance(source, ElevenLabsSpeech):
+                    source = ElevenLabsSpeech(s.elevenlabs_api_key, s.elevenlabs_voice_id or "")
+                eleven_voices = source.voices()
+            except Exception as exc:  # noqa: BLE001
+                eleven_error = str(exc)
         return {
             "inputs": inputs, "outputs": outputs,
             "voices": voices,
+            "tts_provider": s.tts_provider,
+            "elevenlabs_api_key": s.elevenlabs_api_key or "",
+            "elevenlabs_voice_id": s.elevenlabs_voice_id or "",
+            "elevenlabs_voices": eleven_voices,
+            "elevenlabs_error": eleven_error,
             "tts_preset": s.tts_preset, "attention_seconds": s.attention_seconds,
             "presence_enabled": s.presence_enabled, "presence_cooldown_min": s.presence_cooldown_min,
             "presence_available": self.presence is not None,
@@ -161,6 +178,8 @@ class Api:
             "assistant_model": ("ASSISTANT_MODEL", str), "assistant_effort": ("ASSISTANT_EFFORT", str),
             "ambient_model": ("AMBIENT_MODEL", str),
             "ms_login_method": ("MS_LOGIN_METHOD", str), "ms_login_hint": ("MS_LOGIN_HINT", str),
+            "tts_provider": ("TTS_PROVIDER", str), "elevenlabs_api_key": ("ELEVENLABS_API_KEY", str),
+            "elevenlabs_voice_id": ("ELEVENLABS_VOICE_ID", str),
             "file_roots": ("FILE_ROOTS", str),
         }
         env_values: dict[str, str] = {}
@@ -182,6 +201,7 @@ class Api:
         if self.assistant is not None and self.assistant.speech is not None:
             self.assistant.speech.voice_preset = s.tts_preset
             self.assistant.speech.languages = s.language_list
+            self.assistant.rebuild_tts()
         if "file_roots" in values and self.assistant is not None:
             from .tools.files import roots_for
 

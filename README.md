@@ -20,7 +20,8 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word – nicht an ihn gerichtete Sätze ignoriert er
 - **Dazwischenreden**: „Hey Jarvis“ während der Sprachausgabe bricht sie ab
 - **Selbstheilung**: fällt das Mikrofon aus, startet Jarvis die Aufnahme automatisch neu und zeigt es an
-- **Stimmen-Palette**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
+- **Stimme**: Azure (im Azure-Konto enthalten) oder **ElevenLabs** für echte Charakterstimmen; Stimmenliste kommt aus dem eigenen ElevenLabs-Konto
+- **Stimmen-Palette (Azure)**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
 - **Erstellen**: Word-Dokumente, Excel-Tabellen und PowerPoint-Präsentationen als fertige Dateien
 - **KI-Modelle**: Opus 5, Sonnet 5 oder Haiku 4.5 wählbar, Denktiefe einstellbar, Zweitmeinung per Werkzeug
 - **Mehrsprachig**: versteht Deutsch, Rumänisch und Englisch und antwortet in der gesprochenen Sprache
@@ -50,7 +51,8 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   agent/prompts.py   Persona und Arbeitsregeln
   audio/io.py        Aufnahme/Wiedergabe (16 kHz mono)
   audio/wakeword.py  „Hey Jarvis“-Erkennung, Aufnahme bis zur Sprechpause
-  speech/azure.py    Azure Speech REST (STT/TTS)
+  speech/azure.py    Azure Speech REST (Erkennung und Standardstimmen)
+  speech/eleven.py   ElevenLabs-Stimmen (optional, eigenes Konto)
   tools/m365.py      To Do, Mail, Kalender, Teams-Transkripte über Graph (Kurz-IDs t1/m1/mt1)
   tools/teams.py     WebVTT-Transkript -> „Sprecher: Text“
   tools/webcam.py    Schnappschuss als Bild für Claude
@@ -99,6 +101,7 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 | `WAKE_WORD_ENABLED`, `WAKE_WORD_MODEL`, `WAKE_WORD_THRESHOLD` | nein | Standard `true`, `hey_jarvis`, `0.5` |
 | `ASSISTANT_NAME` | nein | Anredename, Standard `Jarvis` |
 | `WEBCAM_ENABLED`, `WEBCAM_INDEX` | nein | Standard `true`, `0` |
+| `TTS_PROVIDER`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | nein | Stimme über ElevenLabs statt Azure |
 | `BRAND_BG`, `BRAND_PANEL`, `BRAND_GRID`, `BRAND_LINE`, `BRAND_PRIMARY`, `BRAND_ACCENT`, `BRAND_TEXT`, `BRAND_MUTED` | nein | Hex-Farben der Oberfläche; Standard ist das Mayer-E-Concept-Design |
 | `BRAND_FONT`, `BRAND_MONO`, `BRAND_TITLE`, `LOGO_PATH` | nein | Schriftarten, Untertitel im Kopf, PNG-Logo |
 | `MS_LOGIN_METHOD`, `MS_LOGIN_HINT` | nein | Anmeldeweg (`auto`, `windows`, `browser`, `devicecode`) und eigene E-Mail |

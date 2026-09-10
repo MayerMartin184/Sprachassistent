@@ -68,6 +68,7 @@ class Assistant:
         self._register_ask_model()
 
         self.speech = None
+        self.tts = None  # Stimme; Azure oder ElevenLabs
         if settings.speech_enabled:
             from .speech.azure import AzureSpeech
 
@@ -79,9 +80,28 @@ class Assistant:
                 voice=settings.tts_voice,
             )
             self._register_language_tool()  # erst wenn self.speech steht
+            self.tts = self._build_tts()
             self.features.append(f"Sprache (Wake-Word „Hey {settings.assistant_name}“)" if settings.wake_word_enabled else "Sprache")
         else:
             self.features.append("nur Text")
+
+    def _build_tts(self):  # noqa: ANN202
+        """Stimme wählen: ElevenLabs, wenn eingerichtet, sonst Azure."""
+        s = self.settings
+        if s.tts_provider == "elevenlabs" and s.elevenlabs_api_key and s.elevenlabs_voice_id:
+            from .speech.eleven import ElevenLabsSpeech
+
+            self.features.append("Stimme: ElevenLabs")
+            return ElevenLabsSpeech(
+                s.elevenlabs_api_key, s.elevenlabs_voice_id, s.elevenlabs_model,
+                s.elevenlabs_stability, s.elevenlabs_similarity, s.elevenlabs_style,
+            )
+        return self.speech
+
+    def rebuild_tts(self) -> None:
+        """Nach einer Änderung in den Einstellungen die Stimme neu aufbauen."""
+        if self.speech is not None:
+            self.tts = self._build_tts()
 
     def _register_ask_model(self) -> None:
         from .agent.agent import MODELS
@@ -202,18 +222,26 @@ class Assistant:
         from .audio.io import resolve_device
 
         self._stop_speaking.clear()
+        note = ""
         try:
-            audio = self.speech.synthesize(text)
+            audio = (self.tts or self.speech).synthesize(text)
         except Exception as exc:  # noqa: BLE001
             log.exception("Sprachsynthese fehlgeschlagen")
-            return f"Sprachausgabe (Azure) fehlgeschlagen: {exc}"
+            if self.tts is not None and self.tts is not self.speech:
+                note = f"Hinweis: {exc} Ich spreche vorerst mit der Azure-Stimme weiter."
+                try:
+                    audio = self.speech.synthesize(text)
+                except Exception as fallback_exc:  # noqa: BLE001
+                    return f"Sprachausgabe fehlgeschlagen: {fallback_exc}"
+            else:
+                return f"Sprachausgabe fehlgeschlagen: {exc}"
         try:
             device = resolve_device(self.settings.audio_output_device, "output")
             self._play_interruptible(audio, device)
         except Exception as exc:  # noqa: BLE001
             log.exception("Wiedergabe fehlgeschlagen")
             return f"Wiedergabe fehlgeschlagen: {exc}. Lautsprecher in den Einstellungen wählen."
-        return None
+        return note or None
 
     def _play_interruptible(self, wav_bytes: bytes, device: int | None) -> None:
         import io

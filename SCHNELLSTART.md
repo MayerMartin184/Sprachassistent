@@ -173,6 +173,21 @@ Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microso
 Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
 Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
+## Bessere Stimmen (ElevenLabs, optional)
+
+Die Azure-Stimmen klingen brauchbar, aber die Charakterstimmen sind nur nachbearbeitet. Für echte
+Charakterstimmen:
+
+1. Auf elevenlabs.io ein Konto anlegen (kostenpflichtig, ab etwa 5 Dollar im Monat).
+2. Dort unter „Voices“ eine Stimme aus der Bibliothek zu deinen Stimmen hinzufügen, oder mit „Voice Design“
+   eine eigene aus einer Beschreibung erzeugen, zum Beispiel „tiefe, bedrohliche Männerstimme hinter einer Maske“.
+3. Im Profil den API-Schlüssel kopieren (beginnt mit `sk_`).
+4. In Jarvis: Einstellungen → Stimmen-Anbieter auf **ElevenLabs**, Schlüssel einfügen, speichern.
+5. Dialog erneut öffnen: Jetzt stehen die Stimmen deines Kontos zur Auswahl. Eine wählen, speichern.
+
+Die Spracherkennung bleibt bei Azure. Fällt ElevenLabs aus, spricht Jarvis mit der Azure-Stimme weiter
+und sagt dir warum.
+
 ## NAS oder Netzlaufwerk freigeben
 
 1. Sicherstellen, dass der Ordner im Windows-Explorer ohne Kennwortabfrage aufgeht. Falls doch eine kommt:
