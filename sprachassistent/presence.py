@@ -110,7 +110,20 @@ class PresenceWatcher:
         self._thread.start()
 
     def stop(self) -> None:
+        """Beobachtung beenden und die Kamera freigeben, damit andere Programme sie nutzen können."""
         self._stop.set()
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=5)
+        self._thread = None
+        with self._lock:
+            self._last_frame = None
+        cap, self._cap = self._cap, None
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:  # noqa: BLE001
+                log.debug("Kamera konnte nicht freigegeben werden", exc_info=True)
 
     def snapshot_jpeg(self, max_width: int = 1024) -> bytes | None:
         import cv2
@@ -153,4 +166,5 @@ class PresenceWatcher:
                         log.exception("Präsenz-Ereignis fehlgeschlagen")
                 self._stop.wait(self.logic.sample_s)
         finally:
+            self._cap = None
             cap.release()

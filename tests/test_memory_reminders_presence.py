@@ -70,3 +70,29 @@ def test_presence_cooldown_suppresses_repeat():
         logic.update(0, t); t += 2.5
     ev2 = [logic.update(1, t + i * 2.5) for i in range(3)]
     assert ev2[-1] is None
+
+
+def test_presence_is_off_by_default():
+    """Die Kamera darf nicht ungefragt dauerhaft belegt sein (sonst funktioniert Teams nicht)."""
+    from sprachassistent.config import Settings
+
+    assert Settings(_env_file=None).presence_enabled is False
+
+
+def test_set_presence_releases_camera(tmp_path, monkeypatch):
+    from sprachassistent.config import Settings
+    from sprachassistent.webapp import Api
+
+    monkeypatch.chdir(tmp_path)
+    api = Api(Settings(_env_file=None, presence_enabled=True, data_dir=tmp_path))
+    stopped = []
+
+    class FakeWatcher:
+        def stop(self):
+            stopped.append(True)
+
+    api.presence = FakeWatcher()
+    assert "freigegeben" in api.set_presence(False)
+    assert stopped == [True] and api.presence is None
+    assert not api.s.presence_enabled
+    assert "PRESENCE_ENABLED=false" in (tmp_path / ".env").read_text(encoding="utf-8")

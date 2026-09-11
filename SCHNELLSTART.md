@@ -173,6 +173,16 @@ Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microso
 Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
 Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
+## Kamera und Teams
+
+Die dauerhafte Kamerabeobachtung ist **aus**. Windows lässt nur ein Programm gleichzeitig an die Webcam;
+liefe sie mit, bliebe dein Bild in Teams schwarz.
+
+- Schneller Schalter **„Kamera“** oben im Jarvis-Fenster: aus heißt, die Kamera ist sofort für Teams frei.
+- Auch mit ausgeschalteter Beobachtung kann Jarvis sehen: Auf „Hey Jarvis, schau mal“ öffnet er die Kamera
+  kurz, macht ein Bild und gibt sie sofort wieder frei.
+- Klemmt es trotzdem, Jarvis kurz schließen, Teams-Videovorschau öffnen, Jarvis wieder starten.
+
 ## Bessere Stimmen (ElevenLabs, optional)
 
 Die Azure-Stimmen klingen brauchbar, aber die Charakterstimmen sind nur nachbearbeitet. Für echte

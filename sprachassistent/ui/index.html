@@ -62,6 +62,7 @@
   .msg.system .who{color:var(--muted)} .msg.system .who::before{background:var(--muted);box-shadow:none}
   .msg.ambient .who{color:#d9b46a} .msg.ambient .who::before{background:#d9b46a;box-shadow:0 0 6px #d9b46a}
   .msg.ambient .text{color:var(--muted);font-size:13.5px}
+  #camwrap input:checked + .track{border-color:#e08a5f;background:rgba(224,138,95,.12)} #camwrap input:checked + .track::after{background:#e08a5f;box-shadow:0 0 8px #e08a5f}
   #ambwrap input:checked + .track{border-color:#d9b46a;background:rgba(217,180,106,.12)} #ambwrap input:checked + .track::after{background:#d9b46a;box-shadow:0 0 8px #d9b46a}
   .msg .text{font-size:15px;line-height:1.55;white-space:pre-wrap}
   .msg.system .text{color:var(--muted);font-size:13.5px}
@@ -122,6 +123,7 @@
     </div>
     <div class="tools">
       <button id="settings" type="button">Einstellungen</button>
+      <label class="switch" id="camwrap" title="An: Jarvis beobachtet dauerhaft über die Kamera. Solange das an ist, kann Teams die Kamera nicht verwenden."><span>Kamera</span><input type="checkbox" id="presence"><span class="track"></span></label>
       <label class="switch" id="ambwrap" title="Gespräche im Raum mitschreiben und auf Zusagen, Aufgaben, Termine prüfen"><span>Mithören</span><input type="checkbox" id="ambient"><span class="track"></span></label>
       <label class="switch" id="micwrap"><span>Mikrofon</span><input type="checkbox" id="mic" checked><span class="track"></span></label>
     </div>
@@ -197,7 +199,7 @@
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" id="s_presence"> Kamera beobachtet lokal, Jarvis kommentiert Ankunft und wiederholte Störungen</label>
     </div></div>
     <div class="field"><label>Ruhezeit Kommentare</label><div class="range"><input type="range" id="s_cool" min="2" max="60" step="1"><span class="val" id="v_cool"></span></div></div>
-    <div class="hint">Höchstens ein Kommentar pro Zeitraum. Die Gesichtserkennung läuft nur auf deinem Rechner; erst bei einem Ereignis geht ein Bild an Claude. Abschalten wirkt nach Neustart wieder ein.</div>
+    <div class="hint">Achtung: Solange das an ist, belegt Jarvis die Kamera dauerhaft – Teams und andere Programme können sie dann nicht verwenden. Schneller Schalter dafür oben im Fenster („Kamera“). Aus bedeutet nicht blind: Auf Zuruf („schau mal“) öffnet Jarvis die Kamera kurz und gibt sie sofort wieder frei. Die Gesichtserkennung läuft nur auf deinem Rechner.</div>
     <div class="field"><label>Weitere Ordner</label><input type="text" id="s_roots" placeholder="Projekte=D:\Projekte;NAS=\\NAS\Daten"></div>
     <div class="hint" id="s_rootstate">Dokumente, Downloads, Desktop und OneDrive sind immer freigegeben. Weitere Ordner als <b>Name=Pfad</b>, mehrere mit Semikolon getrennt. Für ein NAS entweder den Netzwerkpfad (\\NAS\Freigabe) oder den zugeordneten Laufwerksbuchstaben (Z:\) angeben.</div>
     <div class="field"><label>Microsoft-Anmeldung</label><select id="s_mslogin">
@@ -309,6 +311,7 @@ const ui = (() => {
     send: text => call("send", {text}),
     set_mic: on => call("set_mic", {on}),
     set_ambient: on => call("set_ambient", {on}),
+    set_presence: on => call("set_presence", {on}),
     open_settings: () => call("open_settings", {}),
     get_settings: () => call("settings"),
     save_settings: async v => (await call("settings", v)).message,
@@ -334,6 +337,7 @@ const ui = (() => {
   });
   $("mic").addEventListener("change", e => api().set_mic(e.target.checked));
   $("ambient").addEventListener("change", e => api().set_ambient(e.target.checked));
+  $("presence").addEventListener("change", e => api().set_presence(e.target.checked));
   // Einstellungsdialog
   const fill = (sel, items, current, allowDefault) => {
     sel.innerHTML = "";
@@ -423,6 +427,7 @@ const ui = (() => {
       if (r.busy !== undefined) busy(r.busy);
       if (r.mic) mic(r.mic.enabled, r.mic.on);
       ambient(r.ambient);
+      if (r.presence && document.activeElement !== $("presence")) $("presence").checked = r.presence.on;
       showConfirm(r.confirm);
       if (r.mic && r.mic.problem) { $("meter").textContent = "⚠ " + r.mic.problem; return; }
       $("meter").textContent = (r.score === null || r.score === undefined || r.threshold === undefined) ? "" :

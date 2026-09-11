@@ -15,7 +15,7 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Webcam**: auf Zuruf ein Bild aufnehmen und dazu beraten („Jarvis, schau dir das Dokument an“)
 - **Gedächtnis**: merkt sich Absprachen, Gewohnheiten, Personen und Vorlieben dauerhaft und nutzt sie
 - **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen
-- **Präsenz**: erkennt lokal, wenn du zurückkommst oder dich wiederholt jemand unterbricht, und kommentiert gelegentlich
+- **Präsenz** (standardmäßig aus, Schalter „Kamera“ im Fenster): erkennt lokal, wenn du zurückkommst oder dich wiederholt jemand unterbricht. Solange sie läuft, ist die Kamera belegt und für Teams nicht nutzbar
 - **Mithören** (Schalter im Fenster): Gespräche und Sitzungen still mitschreiben, Zusagen und Aufgaben automatisch in To Do, Termine als Erinnerung, Review nach der Sitzung als Datei
 - **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word – nicht an ihn gerichtete Sätze ignoriert er
 - **Dazwischenreden**: „Hey Jarvis“ während der Sprachausgabe bricht sie ab

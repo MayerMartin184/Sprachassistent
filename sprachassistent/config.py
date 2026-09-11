@@ -77,7 +77,9 @@ class Settings(BaseSettings):
     # Webcam und Präsenz
     webcam_enabled: bool = True
     webcam_index: int = 0
-    presence_enabled: bool = True  # Kamera lokal beobachten: Ankunft, wiederholte Störungen -> gelegentlicher Kommentar
+    # Aus: Die Kamera wird nur auf Zuruf kurz benutzt. An: Jarvis beobachtet dauerhaft (Ankunft, Störungen) –
+    # dann ist die Kamera belegt und andere Programme wie Teams können sie nicht verwenden.
+    presence_enabled: bool = False
     presence_cooldown_min: int = 10  # höchstens ein Kommentar pro so viele Minuten
     presence_absence_min: int = 10  # ab so vielen Minuten Abwesenheit gilt Zurückkommen als Ankunft
 

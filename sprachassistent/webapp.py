@@ -51,10 +51,10 @@ class Api:
     # --- Start ------------------------------------------------------------
     def start(self) -> None:
         """Wird nach dem Öffnen des Fensters im Hintergrund aufgerufen."""
-        snapshot = None
         if self.presence is not None:
             self.presence.start()
-            snapshot = self.presence.snapshot_jpeg
+        # Liefert ein Bild aus der laufenden Beobachtung; ist sie aus, öffnet das Werkzeug die Kamera kurz selbst.
+        snapshot = lambda: self.presence.snapshot_jpeg() if self.presence is not None else None  # noqa: E731
         try:
             self.assistant = Assistant(self.s, confirm=self._confirm, notify=self._notify, on_status=self._set_status, snapshot_provider=snapshot)
         except Exception as exc:  # noqa: BLE001
@@ -364,6 +364,7 @@ class Api:
                 "problem": self._mic_problem(),
             },
             "ambient": {"available": self.ambient is not None, "on": bool(self.ambient and self.ambient.enabled)},
+            "presence": {"on": self.presence is not None},
             "confirm": confirm,
         }
 
@@ -377,6 +378,38 @@ class Api:
         if not healthy:
             return f"Kein Mikrofonsignal seit {int(idle)} s – Jarvis versucht einen Neustart."
         return None
+
+    def set_presence(self, on: bool) -> str:
+        """Dauerhafte Kamerabeobachtung ein- oder ausschalten. Aus = Kamera ist für Teams und andere frei."""
+        from .config import update_env_file
+
+        on = bool(on)
+        self.s.presence_enabled = on
+        update_env_file(Path(self.s.env_file_in_use() or ".env"), {"PRESENCE_ENABLED": "true" if on else "false"})
+        if not on:
+            if self.presence is not None:
+                self.presence.stop()
+                self.presence = None
+            self._push("System", "Kamerabeobachtung aus – die Kamera ist jetzt für Teams und andere Programme frei.")
+            return "Kamera freigegeben."
+        if self.presence is None:
+            try:
+                from .presence import PresenceWatcher
+
+                watcher = PresenceWatcher(
+                    self.s.webcam_index, self._on_presence_event,
+                    absence_min=self.s.presence_absence_min, cooldown_min=self.s.presence_cooldown_min,
+                )
+                if not watcher.open():
+                    self._push("System", f"Kamera nicht verfügbar: {watcher.error}")
+                    return f"Kamera nicht verfügbar: {watcher.error}"
+                self.presence = watcher
+                watcher.start()
+            except Exception as exc:  # noqa: BLE001
+                self._push("System", f"Kamerabeobachtung nicht möglich: {exc}")
+                return f"Nicht möglich: {exc}"
+        self._push("System", "Kamerabeobachtung an – solange sie läuft, kann Teams die Kamera nicht verwenden.")
+        return "Kamerabeobachtung an."
 
     def set_ambient(self, on: bool) -> None:
         from .config import update_env_file
