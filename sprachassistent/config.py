@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # Azure Speech
     azure_speech_key: str | None = None
     azure_speech_region: str | None = None
-    speech_languages: str = "de-DE,ro-RO"  # Erkennung parallel in diesen Sprachen, das sicherste Ergebnis gewinnt
+    speech_languages: str = "de-DE"  # Eine Sprache ist deutlich genauer und schneller als mehrere gleichzeitig
     tts_provider: str = "azure"  # azure | elevenlabs
     elevenlabs_api_key: str | None = None
     elevenlabs_voice_id: str | None = None
@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     wake_word_enabled: bool = True
     wake_word_model: str = "hey_jarvis"
     wake_word_threshold: float = 0.5
-    speech_end_silence_ms: int = 1500  # Pause, nach der ein Auftrag abgeschickt wird
-    vad_threshold: float = 0.5  # Empfindlichkeit der Sprach-Aktivitätserkennung (niedriger = empfindlicher)
+    speech_end_silence_ms: int = 2000  # Pause, nach der ein Auftrag abgeschickt wird (kürzer = schneidet Denkpausen ab)
+    vad_threshold: float = 0.4  # Empfindlichkeit der Sprach-Aktivitätserkennung (niedriger = hört auch leise Sprache)
     assistant_name: str = "Jarvis"
 
     # Design (Hex-Farben; Standard = Mayer E-Concept: dunkles Petrol, Raster, hellcyanfarbene Akzente)
@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     ambient_review_min_minutes: int = 8  # ab dieser Gesprächsdauer entsteht ein Review
 
     # Proaktive Hinweise
+    proactive_speech: bool = True  # Erinnerungen und Termine vorlesen; aus = nur im Fenster anzeigen
     calendar_lead_minutes: int = 10  # so viele Minuten vor einem Termin meldet sich Jarvis
 
     # Lokales

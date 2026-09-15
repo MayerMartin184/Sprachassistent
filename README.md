@@ -97,6 +97,7 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 | `ANTHROPIC_API_KEY` | ja | Claude-API-Schlüssel |
 | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | nein | Standard `claude-opus-5`, `medium` |
 | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | für Sprache | Ohne diese Werte nur Texteingabe |
+| `PROACTIVE_SPEECH` | nein | Erinnerungen und Termine vorlesen (`false` = nur anzeigen, unterbricht nie) |
 | `SPEECH_LANGUAGE`, `TTS_VOICE` | nein | Standard `de-DE`, `de-DE-KatjaNeural` |
 | `WAKE_WORD_ENABLED`, `WAKE_WORD_MODEL`, `WAKE_WORD_THRESHOLD` | nein | Standard `true`, `hey_jarvis`, `0.5` |
 | `ASSISTANT_NAME` | nein | Anredename, Standard `Jarvis` |

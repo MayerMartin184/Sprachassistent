@@ -158,6 +158,12 @@
 <div class="overlay" id="overlay">
   <div class="dialog">
     <h2>Einstellungen</h2>
+    <div class="field"><label>Tempo</label><select id="s_speed">
+      <option value="fast">Schnell – Sonnet 5, kurze Wartezeit (empfohlen fürs Sprechen)</option>
+      <option value="balanced">Ausgewogen – Opus 5, niedrige Denktiefe</option>
+      <option value="thorough">Gründlich – Opus 5, hohe Denktiefe (langsam)</option>
+      <option value="custom">Eigene Einstellung</option>
+    </select></div>
     <div class="field"><label>KI-Modell</label><select id="s_model"></select></div>
     <div class="field"><label>Denktiefe</label><select id="s_effort">
       <option value="low">niedrig – schnellste Antworten</option><option value="medium">mittel – ausgewogen (Standard)</option>
@@ -184,7 +190,7 @@
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="ro-RO"> Rumänisch</label>
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" value="en-US"> Englisch</label>
     </div></div>
-    <div class="hint">Mehrere Sprachen gleichzeitig erkennen ist ungenau: Rumänisch wird dann oft als Deutsch gehört. Für zuverlässiges Rumänisch nur Rumänisch anhaken – oder im Gespräch sagen „Hey Jarvis, sprich rumänisch“, dann stellt er selbst um. Als Stimme dafür Seraphina oder Florian wählen.</div>
+    <div class="hint">Am besten nur eine Sprache anhaken – mehrere gleichzeitig sind ungenauer und langsamer. Für zuverlässiges Rumänisch nur Rumänisch anhaken – oder im Gespräch sagen „Hey Jarvis, sprich rumänisch“, dann stellt er selbst um. Als Stimme dafür Seraphina oder Florian wählen.</div>
     <div class="field"><label>Aufmerksam bleiben</label><div class="range"><input type="range" id="s_att" min="0" max="60" step="5"><span class="val" id="v_att"></span></div></div>
     <div class="hint">Nur nach einer Rückfrage von Jarvis hört er so lange ohne „Hey Jarvis“ weiter zu, und er antwortet nur, wenn du wirklich ihn meinst. 0 = immer Wake-Word nötig.</div>
     <div class="field"><label>Wake-Word-Schwelle</label><div class="range"><input type="range" id="s_ww" min="0.2" max="0.8" step="0.05"><span class="val" id="v_ww"></span></div></div>
@@ -195,6 +201,10 @@
     <div class="hint">Ab welcher Sicherheit ein Geräusch als Sprache zählt. Niedriger bei leiser Stimme, höher bei lautem Umfeld.</div>
     <div class="field"><label>Mithören auswerten</label><div class="range"><input type="range" id="s_amb" min="1" max="15" step="1"><span class="val" id="v_amb"></span></div></div>
     <div class="hint">Wie oft neuer Gesprächstext auf Zusagen, Aufgaben und Termine geprüft wird (Schalter „Mithören“ oben im Fenster). Hinweis: Dauerhaftes Mithören verbraucht deutlich mehr Azure-Kontingent; Gesprächspartner sollten Bescheid wissen.</div>
+    <div class="field"><label>Meldungen vorlesen</label><div class="range">
+      <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" id="s_proact"> Erinnerungen und Termine laut ansagen</label>
+    </div></div>
+    <div class="hint">Aus bedeutet: Jarvis unterbricht dich nie von sich aus, die Meldungen erscheinen nur im Fenster.</div>
     <div class="field"><label>Präsenz &amp; Kommentare</label><div class="range">
       <label style="letter-spacing:0;text-transform:none;font:500 13px var(--font);color:var(--text)"><input type="checkbox" id="s_presence"> Kamera beobachtet lokal, Jarvis kommentiert Ankunft und wiederholte Störungen</label>
     </div></div>
@@ -371,6 +381,7 @@ const ui = (() => {
     applyProvider();
     $("s_model").innerHTML = ""; st.models.forEach(m => $("s_model").append(new Option(m.name, m.id))); $("s_model").value = st.assistant_model;
     $("s_effort").value = st.assistant_effort;
+    $("s_speed").value = speedFromFields();
     $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Hauptmodell", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
     [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
     $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
@@ -382,12 +393,24 @@ const ui = (() => {
       : st.ms_account ? ("Angemeldet als " + st.ms_account + ".")
       : "Nicht angemeldet. Wenn die Kennwortabfrage scheitert, obwohl office.com funktioniert: „Code eingeben“ wählen und den Code in dem Browser eingeben, in dem du bei Microsoft schon angemeldet bist.";
     $("s_amb").value = st.ambient_extract_minutes; showVal("s_amb","v_amb", v => "alle " + v + " min");
+    $("s_proact").checked = st.proactive_speech !== false;
     $("s_presence").checked = st.presence_enabled; $("s_cool").value = st.presence_cooldown_min; showVal("s_cool","v_cool", v => v + " min");
     $("s_ww").value = st.wake_word_threshold; $("s_pause").value = st.speech_end_silence_ms; $("s_vad").value = st.vad_threshold;
     showVal("s_ww","v_ww", v => Number(v).toFixed(2)); showVal("s_pause","v_pause", v => (v/1000).toFixed(1)+" s"); showVal("s_vad","v_vad", v => Number(v).toFixed(2));
     $("s_msg").textContent = ""; $("overlay").classList.add("open");
   }
   $("settings").addEventListener("click", openSettings);
+  const SPEEDS = {fast: ["claude-sonnet-5", "low"], balanced: ["claude-opus-5", "low"], thorough: ["claude-opus-5", "high"]};
+  function speedFromFields(){
+    const cur = [$("s_model").value, $("s_effort").value].join("|");
+    return Object.keys(SPEEDS).find(k => SPEEDS[k].join("|") === cur) || "custom";
+  }
+  $("s_speed").addEventListener("change", () => {
+    const preset = SPEEDS[$("s_speed").value];
+    if (preset) { $("s_model").value = preset[0]; $("s_effort").value = preset[1]; }
+  });
+  $("s_model").addEventListener("change", () => $("s_speed").value = speedFromFields());
+  $("s_effort").addEventListener("change", () => $("s_speed").value = speedFromFields());
   $("s_prov").addEventListener("change", applyProvider);
   $("s_cancel").addEventListener("click", () => $("overlay").classList.remove("open"));
   $("s_env").addEventListener("click", () => api().open_settings());

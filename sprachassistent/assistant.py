@@ -204,7 +204,13 @@ class Assistant:
             raise RuntimeError("Spracherkennung nicht konfiguriert (AZURE_SPEECH_KEY/REGION fehlen).")
         if isinstance(wavs, bytes):
             wavs = [wavs]
-        parts = [self.speech.transcribe(w) for w in wavs]
+        if len(wavs) == 1:
+            return self.speech.transcribe(wavs[0])
+        # Gleichzeitig statt nacheinander: bei langen Sätzen spart das mehrere Sekunden.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(len(wavs), 6)) as pool:
+            parts = list(pool.map(self.speech.transcribe, wavs))
         return " ".join(p for p in parts if p).strip()
 
     def stop_speaking(self) -> None:

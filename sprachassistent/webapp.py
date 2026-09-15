@@ -146,6 +146,7 @@ class Api:
             "elevenlabs_error": eleven_error,
             "tts_preset": s.tts_preset, "attention_seconds": s.attention_seconds,
             "presence_enabled": s.presence_enabled, "presence_cooldown_min": s.presence_cooldown_min,
+            "proactive_speech": s.proactive_speech,
             "presence_available": self.presence is not None,
             "ambient_extract_minutes": s.ambient_extract_minutes,
             "models": [{"id": k, "name": n} for k, n in MODELS.items()], "efforts": EFFORTS,
@@ -174,6 +175,7 @@ class Api:
             "vad_threshold": ("VAD_THRESHOLD", float), "tts_preset": ("TTS_PRESET", str),
             "attention_seconds": ("ATTENTION_SECONDS", int), "speech_languages": ("SPEECH_LANGUAGES", str),
             "presence_enabled": ("PRESENCE_ENABLED", bool), "presence_cooldown_min": ("PRESENCE_COOLDOWN_MIN", int),
+            "proactive_speech": ("PROACTIVE_SPEECH", bool),
             "ambient_extract_minutes": ("AMBIENT_EXTRACT_MINUTES", int),
             "assistant_model": ("ASSISTANT_MODEL", str), "assistant_effort": ("ASSISTANT_EFFORT", str),
             "ambient_model": ("AMBIENT_MODEL", str),
@@ -533,19 +535,24 @@ class Api:
         self._push("Du", text)
         self._process_text(text, addressed=addressed)
 
+    def _play_beep(self) -> None:
+        try:
+            from .audio.io import play_wav, resolve_device
+            from .audio.wakeword import beep_wav
+
+            play_wav(beep_wav(), resolve_device(self.s.audio_output_device, "output"))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Bestätigungston fehlgeschlagen: %s", exc)
+
     def _on_utterance(self, wavs: list[bytes]) -> None:
         self._run(self._process_audio, wavs)
 
     def _on_listener_state(self, state: str) -> None:
         if state == "wake":
             self._set_state("wake")
-            try:
-                from .audio.io import play_wav, resolve_device
-                from .audio.wakeword import beep_wav
-
-                play_wav(beep_wav(), resolve_device(self.s.audio_output_device, "output"))
-            except Exception as exc:  # noqa: BLE001
-                self._push("System", f"Bestätigungston fehlgeschlagen: {exc}")
+            # In einem eigenen Thread: sonst steht die Aufnahme still, solange der Ton läuft,
+            # und der Anfang des Satzes geht verloren.
+            threading.Thread(target=self._play_beep, name="beep", daemon=True).start()
         elif state in ("listening", "processing", "attentive"):
             self._set_state(state)
         elif state == "cancel":
@@ -612,7 +619,8 @@ class Api:
                 self._set_state("processing")
                 text = self.assistant.handle_event(description, jpeg)
                 self._push(f"{self.s.assistant_name} · {reason}", text)
-                self._speak(text)
+                if self.s.proactive_speech:
+                    self._speak(text)
             except Exception as exc:  # noqa: BLE001
                 log.exception("Proaktive Meldung fehlgeschlagen")
                 self._push("System", f"Meldung fehlgeschlagen: {exc}")

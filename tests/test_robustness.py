@@ -176,3 +176,41 @@ def test_activity_labels_are_plain_german():
     assert activity("planner_add_task") == "Arbeite an den Team-Aufgaben"
     assert activity("files_search") == "Durchsuche deine Dateien"
     assert activity("irgendwas_neues").startswith("Führe")
+
+
+def test_transcription_of_chunks_runs_in_parallel():
+    """Lange Sätze werden in Stücke geschnitten – die dürfen nicht nacheinander erkannt werden."""
+    import threading
+    import time
+
+    from sprachassistent.assistant import Assistant
+
+    active, peak = [0], [0]
+    lock = threading.Lock()
+
+    def slow(_wav):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.15)
+        with lock:
+            active[0] -= 1
+        return "Stück"
+
+    assistant = object.__new__(Assistant)
+    assistant.speech = SimpleNamespace(transcribe=slow)
+    start = time.monotonic()
+    text = assistant.transcribe([b"a", b"b", b"c", b"d"])
+    dauer = time.monotonic() - start
+    assert text == "Stück Stück Stück Stück"
+    assert peak[0] > 1 and dauer < 0.5  # gleichzeitig, nicht 4 x 0,15 s
+
+
+def test_defaults_favour_reliable_understanding():
+    from sprachassistent.config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.language_list == ["de-DE"]  # eine Sprache: genauer und schneller
+    assert s.speech_end_silence_ms >= 2000  # Denkpausen werden nicht abgeschnitten
+    assert s.vad_threshold <= 0.4  # auch leise Sprache zählt
+    assert s.proactive_speech is True
