@@ -76,6 +76,9 @@
   .send:disabled{opacity:.45;cursor:wait;box-shadow:none}
   .talk{background:transparent;color:var(--primary);border:1px solid var(--primary);box-shadow:none}
   .talk:hover{background:rgba(167,227,234,.12);box-shadow:none}
+  .stop{background:transparent;color:#e0745f;border:1px solid #e0745f;box-shadow:none}
+  .stop:hover{background:rgba(224,116,95,.14);box-shadow:none}
+  .stop:disabled{opacity:.3}
   /* Einstellungsdialog */
   .overlay{position:fixed;inset:0;background:rgba(7,14,17,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:10}
   .overlay.open{display:flex}
@@ -142,6 +145,7 @@
 
   <form id="form" autocomplete="off">
     <input type="text" id="input" placeholder="Oder hier tippen …" autofocus>
+    <button class="send stop" id="stop" type="button" title="Sprachausgabe sofort beenden (Esc)">■&nbsp;Stopp</button>
     <button class="send talk" id="talk" type="button" title="Aufnahme sofort starten – ohne „Hey Jarvis“">🎙&nbsp;Sprechen</button>
     <button class="send" id="send" type="submit">Senden&nbsp;→</button>
   </form>
@@ -301,6 +305,7 @@ const ui = (() => {
   let wasBusy = false;
   function busy(b){
     $("send").disabled = b; $("input").disabled = b; $("talk").disabled = b;
+    $("stop").disabled = false;
     const dialogOpen = $("overlay").classList.contains("open") || $("confirm").classList.contains("open");
     if (wasBusy && !b && !dialogOpen) $("input").focus();  // nur nach einer abgeschlossenen Antwort
     wasBusy = b;
@@ -324,6 +329,7 @@ const ui = (() => {
     send: text => call("send", {text}),
     set_mic: on => call("set_mic", {on}),
     listen: () => call("listen", {}),
+    stop: () => call("stop", {}),
     set_ambient: on => call("set_ambient", {on}),
     set_presence: on => call("set_presence", {on}),
     open_settings: () => call("open_settings", {}),
@@ -349,6 +355,8 @@ const ui = (() => {
     e.preventDefault(); const v = $("input").value.trim(); if (!v) return;
     $("input").value = ""; busy(true); await api().send(v);
   });
+  $("stop").addEventListener("click", () => api().stop());
+  addEventListener("keydown", e => { if (e.key === "Escape") api().stop(); });
   $("talk").addEventListener("click", async () => { const r = await api().listen(); if (r && r.message) setState(state, r.message); });
   $("mic").addEventListener("change", e => api().set_mic(e.target.checked));
   $("ambient").addEventListener("change", e => api().set_ambient(e.target.checked));

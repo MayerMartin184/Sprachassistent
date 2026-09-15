@@ -67,6 +67,8 @@ def make_handler(api: Api):  # noqa: ANN201
                 if path == "/api/send":
                     api.send(data.get("text", ""))
                     self._json({"ok": True})
+                elif path == "/api/stop":
+                    self._json({"message": api.stop_speaking()})
                 elif path == "/api/listen":
                     self._json({"message": api.listen_now()})
                 elif path == "/api/set_mic":

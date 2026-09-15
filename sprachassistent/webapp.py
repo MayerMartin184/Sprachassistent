@@ -444,6 +444,15 @@ class Api:
         self._set_state("processing")
         self._run(self._process_text, text)
 
+    def stop_speaking(self) -> str:
+        """Laufende Sprachausgabe sofort beenden."""
+        if self.assistant is None:
+            return "Jarvis startet noch."
+        self.assistant.stop_speaking()
+        if self._state == "speaking":
+            self._set_state("listening" if (self.listener is not None and self._mic_on) else "idle")
+        return "Gestoppt."
+
     def listen_now(self) -> str:
         """Aufnahme sofort starten – der verlässliche Weg, wenn das Wake-Word nicht anspringt."""
         if self.listener is None:

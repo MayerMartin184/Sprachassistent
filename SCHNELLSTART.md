@@ -173,6 +173,11 @@ Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microso
 Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
 Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
+## Jarvis unterbrechen
+
+- Knopf **„■ Stopp“** unten im Fenster oder die **Esc-Taste**: Er hört sofort auf zu sprechen.
+- Im Gespräch geht auch „Hey Jarvis“ dazwischenrufen – dann bricht er ab und hört dir zu.
+
 ## Wenn er dich nicht versteht
 
 - **Knopf „Sprechen“** unten im Fenster drücken und danach reden. Das startet die Aufnahme sofort,

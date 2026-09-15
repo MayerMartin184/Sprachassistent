@@ -281,3 +281,16 @@ def test_backend_serves_before_heavy_loading(tmp_path, monkeypatch):
     assert time.monotonic() - start < 0.5
     assert any("Starte" in m["text"] for m in zustand["messages"])
     slow.set()
+
+
+def test_stop_button_ends_speech(tmp_path):
+    """Der Stopp-Knopf muss die Sprachausgabe sofort beenden und den Zustand zurücksetzen."""
+    from sprachassistent.config import Settings
+    from sprachassistent.webapp import Api
+
+    api = Api(Settings(_env_file=None, data_dir=tmp_path))
+    gestoppt = []
+    api.assistant = SimpleNamespace(stop_speaking=lambda: gestoppt.append(True))
+    api._state = "speaking"
+    assert api.stop_speaking() == "Gestoppt."
+    assert gestoppt == [True] and api._state == "idle"
