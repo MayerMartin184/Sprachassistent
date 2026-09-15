@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     elevenlabs_style: float = 0.0
     tts_preset: str = "seraphina"  # Schlüssel aus der Stimmen-Palette (speech/azure.py)
     tts_voice: str | None = None  # optionale explizite Azure-Stimme, überstimmt die Palette
-    attention_seconds: int = 20  # nach einer Antwort so lange ohne Wake-Word zuhören
+    # 0 = jede Äußerung beginnt mit dem Wake-Word. Das ist berechenbar: keine Fehlauslösungen, keine Zusatzrunde.
+    attention_seconds: int = 0
 
     # Microsoft 365
     ms_client_id: str | None = None

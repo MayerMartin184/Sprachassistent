@@ -145,6 +145,7 @@ class WakeWordListener:
         self.last_trigger = "wake"  # "wake" oder "attention" – woher die letzte Aufnahme kam
         self.last_frame_at = 0.0  # Zeitstempel des letzten Mikrofon-Frames (Überwachung)
         self.restarts = 0
+        self._force = threading.Event()  # Aufnahme per Knopf starten, ohne Wake-Word
         self.on_state = on_state
         self.model_name = model_name
         self.threshold = threshold
@@ -182,6 +183,11 @@ class WakeWordListener:
         self.stop()
         self.device = device
         self.start()
+
+    def trigger(self) -> None:
+        """Aufnahme sofort starten, als wäre das Wake-Word gefallen (Knopf „Jetzt sprechen“)."""
+        self._force.set()
+        self._paused.clear()
 
     def pause(self) -> None:
         self._paused.set()
@@ -290,6 +296,19 @@ class WakeWordListener:
                     elif self._attention_left <= 0:
                         model.reset()
                         self.on_state("listening")
+                    continue
+
+                if segment is None and self._force.is_set():
+                    self._force.clear()
+                    model.reset()
+                    ambient_seg = None
+                    self.last_trigger = "wake"  # ausdrücklich an Jarvis gerichtet
+                    if self.speaking and self.on_barge_in is not None:
+                        self.on_barge_in()
+                    self.on_state("wake")
+                    segment = UtteranceSegmenter(
+                        vad_threshold=self.vad_threshold, end_silence_ms=self.end_silence_ms, discard_ms=0
+                    )
                     continue
 
                 if segment is None:

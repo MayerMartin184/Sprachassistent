@@ -74,6 +74,8 @@
   .send{background:var(--primary);color:var(--bg);border:0;font:700 11px var(--mono);letter-spacing:.26em;text-transform:uppercase;padding:0 28px;cursor:pointer;box-shadow:0 0 18px rgba(167,227,234,.35);transition:.15s}
   .send:hover{background:#c4f0f4;box-shadow:0 0 26px rgba(167,227,234,.6)}
   .send:disabled{opacity:.45;cursor:wait;box-shadow:none}
+  .talk{background:transparent;color:var(--primary);border:1px solid var(--primary);box-shadow:none}
+  .talk:hover{background:rgba(167,227,234,.12);box-shadow:none}
   /* Einstellungsdialog */
   .overlay{position:fixed;inset:0;background:rgba(7,14,17,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:10}
   .overlay.open{display:flex}
@@ -140,6 +142,7 @@
 
   <form id="form" autocomplete="off">
     <input type="text" id="input" placeholder="Oder hier tippen …" autofocus>
+    <button class="send talk" id="talk" type="button" title="Aufnahme sofort starten – ohne „Hey Jarvis“">🎙&nbsp;Sprechen</button>
     <button class="send" id="send" type="submit">Senden&nbsp;→</button>
   </form>
 </div>
@@ -297,7 +300,7 @@ const ui = (() => {
   }
   let wasBusy = false;
   function busy(b){
-    $("send").disabled = b; $("input").disabled = b;
+    $("send").disabled = b; $("input").disabled = b; $("talk").disabled = b;
     const dialogOpen = $("overlay").classList.contains("open") || $("confirm").classList.contains("open");
     if (wasBusy && !b && !dialogOpen) $("input").focus();  // nur nach einer abgeschlossenen Antwort
     wasBusy = b;
@@ -320,6 +323,7 @@ const ui = (() => {
   const api = () => ({
     send: text => call("send", {text}),
     set_mic: on => call("set_mic", {on}),
+    listen: () => call("listen", {}),
     set_ambient: on => call("set_ambient", {on}),
     set_presence: on => call("set_presence", {on}),
     open_settings: () => call("open_settings", {}),
@@ -345,6 +349,7 @@ const ui = (() => {
     e.preventDefault(); const v = $("input").value.trim(); if (!v) return;
     $("input").value = ""; busy(true); await api().send(v);
   });
+  $("talk").addEventListener("click", async () => { const r = await api().listen(); if (r && r.message) setState(state, r.message); });
   $("mic").addEventListener("change", e => api().set_mic(e.target.checked));
   $("ambient").addEventListener("change", e => api().set_ambient(e.target.checked));
   $("presence").addEventListener("change", e => api().set_presence(e.target.checked));

@@ -444,6 +444,17 @@ class Api:
         self._set_state("processing")
         self._run(self._process_text, text)
 
+    def listen_now(self) -> str:
+        """Aufnahme sofort starten – der verlässliche Weg, wenn das Wake-Word nicht anspringt."""
+        if self.listener is None:
+            return "Spracheingabe ist nicht eingerichtet."
+        if self._busy:
+            return "Ich arbeite gerade noch."
+        if not self._mic_on:
+            self._mic_on = True
+        self.listener.trigger()
+        return "Sprich jetzt."
+
     def set_mic(self, on: bool) -> None:
         self._mic_on = bool(on)
         if self.listener is None:

@@ -17,7 +17,8 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Erinnerungen**: meldet sich von selbst zur Zeit, für Zusagen, Rückrufe und vor Terminen
 - **Präsenz** (standardmäßig aus, Schalter „Kamera“ im Fenster): erkennt lokal, wenn du zurückkommst oder dich wiederholt jemand unterbricht. Solange sie läuft, ist die Kamera belegt und für Teams nicht nutzbar
 - **Mithören** (Schalter im Fenster): Gespräche und Sitzungen still mitschreiben, Zusagen und Aufgaben automatisch in To Do, Termine als Erinnerung, Review nach der Sitzung als Datei
-- **Aufmerksam bleiben**: nach einer Antwort einfach weitersprechen, ohne Wake-Word – nicht an ihn gerichtete Sätze ignoriert er
+- **Sprechen-Knopf**: startet die Aufnahme sofort, auch ohne „Hey Jarvis“ – der verlässliche Weg, wenn das Wake-Word nicht anspringt
+- **Aufmerksam bleiben** (standardmäßig aus): nach einer Rückfrage kurz ohne Wake-Word weiterhören
 - **Dazwischenreden**: „Hey Jarvis“ während der Sprachausgabe bricht sie ab
 - **Selbstheilung**: fällt das Mikrofon aus, startet Jarvis die Aufnahme automatisch neu und zeigt es an
 - **Stimme**: Azure (im Azure-Konto enthalten) oder **ElevenLabs** für echte Charakterstimmen; Stimmenliste kommt aus dem eigenen ElevenLabs-Konto

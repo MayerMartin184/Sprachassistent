@@ -173,6 +173,14 @@ Beim ersten Mail- oder To-Do-Zugriff erscheint ein Code zum Anmelden bei Microso
 Fehlt der Claude-Schlüssel, erscheint beim Start ein Hinweisfenster statt des Programms.
 Fehlermeldungen landen in `%USERPROFILE%\.sprachassistent\jarvis.log`.
 
+## Wenn er dich nicht versteht
+
+- **Knopf „Sprechen“** unten im Fenster drücken und danach reden. Das startet die Aufnahme sofort,
+  ohne Wake-Word, und funktioniert auch bei Störgeräuschen im Raum.
+- Nach dem Ton sprechen, nicht davor.
+- In den Einstellungen „Pause bis Absenden“ auf 2 bis 2,5 Sekunden, wenn er dich mitten im Satz abschneidet.
+- Bei „Sprachen verstehen“ nur Deutsch anhaken.
+
 ## Kamera und Teams
 
 Die dauerhafte Kamerabeobachtung ist **aus**. Windows lässt nur ein Programm gleichzeitig an die Webcam;

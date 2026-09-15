@@ -214,3 +214,45 @@ def test_defaults_favour_reliable_understanding():
     assert s.speech_end_silence_ms >= 2000  # Denkpausen werden nicht abgeschnitten
     assert s.vad_threshold <= 0.4  # auch leise Sprache zählt
     assert s.proactive_speech is True
+
+
+def test_internal_marker_never_reaches_the_window():
+    """Der Marker IGNORE ist intern – er darf nie als Antwort erscheinen."""
+    from sprachassistent.assistant import Assistant
+
+    for reply in ["IGNORE", "ignore.", "**IGNORE**", "  IGNORE  ", "Ignore!"]:
+        dropped.clear()
+        assistant = _assistant_with(reply)
+        assert assistant.handle_text("Nebengespräch", addressed=False) == "", reply
+        assert dropped == [1]
+
+
+def test_marker_is_cut_out_if_mixed_with_real_text():
+    from sprachassistent.assistant import Assistant
+
+    dropped.clear()
+    assistant = _assistant_with("Ich lege das an. IGNORE")
+    answer = assistant.handle_text("mach das", addressed=False)
+    assert "IGNORE" not in answer.upper() and answer.startswith("Ich lege")
+
+
+def test_empty_answer_is_treated_as_ignored():
+    dropped.clear()
+    assistant = _assistant_with("   ")
+    assert _assistant_with("   ").handle_text("…", addressed=False) == ""
+
+
+def test_wake_word_is_required_by_default():
+    from sprachassistent.config import Settings
+
+    assert Settings(_env_file=None).attention_seconds == 0
+
+
+def test_listen_button_starts_a_recording():
+    from sprachassistent.audio.wakeword import WakeWordListener
+
+    listener = WakeWordListener(on_utterance=lambda _w: None, on_state=lambda _s: None)
+    listener.pause()
+    assert not listener._force.is_set()
+    listener.trigger()
+    assert listener._force.is_set() and not listener.paused  # Aufnahme startet, Pause aufgehoben

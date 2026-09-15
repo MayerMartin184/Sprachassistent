@@ -183,9 +183,25 @@ class Assistant:
             "ein Selbstgespräch, Hintergrundgeräusch oder ein Bruchstück, antworte ausschließlich mit dem Wort IGNORE.]"
         )
         answer = self.agent.run(gate)
-        if answer.strip().upper().startswith("IGNORE"):
+        return self._without_marker(answer)
+
+    @staticmethod
+    def _is_marker(answer: str) -> bool:
+        """Erkennt den internen Marker auch mit Satzzeichen, Sternchen oder kurzem Vorspann."""
+        import re
+
+        tokens = re.sub(r"[^A-Za-zÄÖÜäöüß ]+", " ", answer).upper().split()
+        return "IGNORE" in tokens and len(tokens) <= 3  # nur der Marker, nicht eine echte Antwort
+
+    def _without_marker(self, answer: str) -> str:
+        """Leere Antwort, wenn der Marker gemeint war. Der Marker darf nie im Fenster landen."""
+        if not answer.strip() or self._is_marker(answer):
             self.agent.drop_last_exchange()
             return ""
+        if "IGNORE" in answer.upper():  # Notbremse: Marker herausschneiden statt anzeigen
+            import re
+
+            answer = re.sub(r"\bIGNORE\b[.:!]?", "", answer, flags=re.IGNORECASE).strip()
         return answer
 
     def handle_event(self, description: str, jpeg: bytes | None = None) -> str:
