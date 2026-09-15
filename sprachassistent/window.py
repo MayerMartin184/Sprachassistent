@@ -32,7 +32,7 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _wait_for_backend(port: int, timeout: float = 120.0) -> bool:
+def _wait_for_backend(port: int, timeout: float = 45.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:

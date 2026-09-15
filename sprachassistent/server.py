@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Settings
-from .webapp import Api, create_backend
+from .webapp import Api, boot
 
 log = logging.getLogger(__name__)
 UI_DIR = Path(__file__).with_name("ui")
@@ -106,10 +106,12 @@ def make_handler(api: Api):  # noqa: ANN201
 
 
 def serve(settings: Settings, port: int, idle_timeout: float = 30.0) -> None:
-    api = create_backend(settings)
+    # Wichtig: Der Server antwortet sofort. Modelle, Kamera und Anmeldungen laden danach im Hintergrund –
+    # sonst steht das Fenster minutenlang auf dem Startbildschirm, wenn ein Gerät klemmt.
+    api = Api(settings)
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(api))
     server.daemon_threads = True
-    threading.Thread(target=api.start, name="backend-start", daemon=True).start()
+    threading.Thread(target=lambda: boot(api, settings), name="backend-start", daemon=True).start()
 
     def watchdog() -> None:
         started = time.time()

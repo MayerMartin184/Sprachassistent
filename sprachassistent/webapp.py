@@ -705,8 +705,15 @@ def _preload(settings: Settings):  # noqa: ANN202
                     settings.webcam_index, lambda *_: None,
                     absence_min=settings.presence_absence_min, cooldown_min=settings.presence_cooldown_min,
                 )
-                if watcher.open():
+                # Eine belegte Kamera (z. B. durch Teams) kann beim Öffnen lange blockieren – höchstens 8 s warten.
+                opened: list[bool] = []
+                opener = threading.Thread(target=lambda: opened.append(watcher.open()), daemon=True)
+                opener.start()
+                opener.join(timeout=8)
+                if opened and opened[0]:
                     presence = watcher
+                elif opener.is_alive():
+                    log.warning("Kamera antwortet nicht – Beobachtung bleibt aus")
         except ImportError:
             pass
         except Exception as exc:  # noqa: BLE001
@@ -721,11 +728,22 @@ def _preload(settings: Settings):  # noqa: ANN202
     return presence
 
 
+def boot(api: Api, settings: Settings) -> None:
+    """Läuft im Hintergrund, während das Fenster schon bedienbar ist."""
+    api._push("System", "Starte – Modelle werden geladen …")
+    try:
+        presence = _preload(settings)
+        if presence is not None:
+            presence.on_event = api._on_presence_event
+            api.presence = presence
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Vorbereitung fehlgeschlagen")
+        api._push("System", f"Vorbereitung fehlgeschlagen: {exc}")
+    api.start()
+
+
 def create_backend(settings: Settings) -> Api:
-    """Bereitet das Backend vor (Importe, Modelle, Kamera) und liefert die Schnittstelle."""
-    presence = _preload(settings)
+    """Nur für Tests und den Textmodus: alles vorbereiten und die Schnittstelle liefern."""
     api = Api(settings)
-    if presence is not None:
-        presence.on_event = api._on_presence_event
-        api.presence = presence
+    boot(api, settings)
     return api

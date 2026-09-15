@@ -256,3 +256,28 @@ def test_listen_button_starts_a_recording():
     assert not listener._force.is_set()
     listener.trigger()
     assert listener._force.is_set() and not listener.paused  # Aufnahme startet, Pause aufgehoben
+
+
+def test_backend_serves_before_heavy_loading(tmp_path, monkeypatch):
+    """Das Fenster darf nicht auf Modelle oder Kamera warten – sonst hängt der Startbildschirm."""
+    import threading
+    import time
+
+    from sprachassistent import webapp
+    from sprachassistent.config import Settings
+
+    slow = threading.Event()
+
+    def langsames_laden(_settings):
+        slow.wait(timeout=5)  # simuliert eine klemmende Kamera
+        return None
+
+    monkeypatch.setattr(webapp, "_preload", langsames_laden)
+    api = webapp.Api(Settings(_env_file=None, data_dir=tmp_path))
+    threading.Thread(target=lambda: webapp.boot(api, api.s), daemon=True).start()
+
+    start = time.monotonic()
+    zustand = api.poll()  # muss sofort antworten
+    assert time.monotonic() - start < 0.5
+    assert any("Starte" in m["text"] for m in zustand["messages"])
+    slow.set()
