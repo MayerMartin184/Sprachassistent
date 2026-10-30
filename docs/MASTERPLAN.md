@@ -55,7 +55,7 @@ Auf Mitarbeiter-PCs ist die Finanz-Ebene technisch gar nicht vorhanden (kein Ord
                         │ liest/schreibt│ fragt         │ nur Martin/Buchhaltung
                         ▼               ▼               ▼
             ┌───────────────┐  ┌───────────────┐  ┌────────────────────┐
-            │ 02_Wissen     │  │ Nexus/ElecTriX│  │ Nexus Office       │
+            │ 03_Wissen     │  │ Nexus/ElecTriX│  │ Nexus Office       │
             │ (Brain, DE/RO)│  │ Workboard,    │  │ Angebote, Rechnungen│
             │ Standards,    │  │ Revit-Pipe,   │  │ Ausgaben, Löhne    │
             │ Lessons, ADRs │  │ Projektregister│ │ 00_Office          │
