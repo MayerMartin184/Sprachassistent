@@ -128,6 +128,7 @@
     </div>
     <div class="tools">
       <button id="settings" type="button">Einstellungen</button>
+      <button id="italian" type="button" title="Italienisch-Lektion mit Jarvis starten (Wiederholung und neue Karten)">Italienisch</button>
       <label class="switch" id="camwrap" title="An: Jarvis beobachtet dauerhaft über die Kamera. Solange das an ist, kann Teams die Kamera nicht verwenden."><span>Kamera</span><input type="checkbox" id="presence"><span class="track"></span></label>
       <label class="switch" id="ambwrap" title="Gespräche im Raum mitschreiben und auf Zusagen, Aufgaben, Termine prüfen"><span>Mithören</span><input type="checkbox" id="ambient"><span class="track"></span></label>
       <label class="switch" id="micwrap"><span>Mikrofon</span><input type="checkbox" id="mic" checked><span class="track"></span></label>
@@ -356,6 +357,7 @@ const ui = (() => {
     $("input").value = ""; busy(true); await api().send(v);
   });
   $("stop").addEventListener("click", () => api().stop());
+  $("italian").addEventListener("click", async () => { if ($("send").disabled) return; busy(true); await api().send("Lass uns Italienisch üben."); });
   addEventListener("keydown", e => { if (e.key === "Escape") api().stop(); });
   $("talk").addEventListener("click", async () => { const r = await api().listen(); if (r && r.message) setState(state, r.message); });
   $("mic").addEventListener("change", e => api().set_mic(e.target.checked));

@@ -32,6 +32,8 @@ VOICE_PRESETS: list[tuple] = [
     ("emil_ro", "Emil – rumänisch, männlich", "ro-RO-EmilNeural", "0%", "0%", None, []),
     ("ava_en", "Ava – englisch, weiblich, mehrsprachig", "en-US-AvaMultilingualNeural", "0%", "0%", None, []),
     ("andrew_en", "Andrew – englisch, männlich, mehrsprachig", "en-US-AndrewMultilingualNeural", "0%", "0%", None, []),
+    ("isabella_it", "Isabella – italienisch, weiblich, mehrsprachig", "it-IT-IsabellaMultilingualNeural", "0%", "0%", None, []),
+    ("giuseppe_it", "Giuseppe – italienisch, männlich, mehrsprachig", "it-IT-GiuseppeMultilingualNeural", "0%", "0%", None, []),
     # --- Filmcharaktere (Effektkette) ---
     ("bordcomputer", "★ Bordcomputer – ruhig, kalt, leicht metallisch (KI im Raumschiff)", "de-DE-FlorianMultilingualNeural", "-6%", "-10%", None,
      [("flanger", 0.3, 1.5, 0.35), ("reverb", 0.3, 0.18)]),
@@ -77,6 +79,8 @@ VOICE_FALLBACKS = {
     "de-DE-SeraphinaMultilingualNeural": "de-DE-KatjaNeural",
     "en-US-AndrewMultilingualNeural": "en-US-GuyNeural",
     "en-US-AvaMultilingualNeural": "en-US-JennyNeural",
+    "it-IT-IsabellaMultilingualNeural": "it-IT-ElsaNeural",
+    "it-IT-GiuseppeMultilingualNeural": "it-IT-DiegoNeural",
     "de-DE-ElkeNeural": "de-DE-KatjaNeural",
     "de-DE-KillianNeural": "de-DE-ConradNeural",
     "de-DE-LouisaNeural": "de-DE-AmalaNeural",

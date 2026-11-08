@@ -27,6 +27,7 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Erstellen**: Word-Dokumente, Excel-Tabellen und PowerPoint-Präsentationen als fertige Dateien
 - **KI-Modelle**: Opus 5, Sonnet 5 oder Haiku 4.5 wählbar, Denktiefe einstellbar, Zweitmeinung per Werkzeug
 - **Mehrsprachig**: versteht Deutsch, Rumänisch und Englisch und antwortet in der gesprochenen Sprache
+- **Italienisch-Trainer** (Knopf „Italienisch“ oder „Hey Jarvis, lass uns Italienisch üben“): Karteikasten mit über 200 Karten (Begrüßung, Zahlen, Zeit, Essen, Unterwegs, Verben, Büro, Grammatik, Aussprache), jede mit rumänischer Brücke (verwandt / anders / falscher Freund). Jarvis fragt Karte für Karte ab, lässt nachsprechen, korrigiert und plant Wiederholungen nach Leitner (1, 3, 7, 14, 30 Tage). Eigene Wörter kommen per Zuruf dazu; Fortschritt und Übungsserie bleiben gespeichert
 
 Technik: Claude (Anthropic API) als Agent mit Werkzeugen und integrierter Websuche, openWakeWord
 für „Hey Jarvis“ (lokal, CPU), Azure Speech für Spracherkennung und Sprachausgabe, Microsoft Graph für
@@ -67,6 +68,8 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   tools/documents.py Word/Excel/PowerPoint erzeugen
   tools/lists.py     Listen (lokal)
   tools/tasks.py     Aufgaben lokal (nur ohne Microsoft 365)
+  tools/italian.py   Italienisch-Trainer: Übungsrunden, Bewertung, Leitner-Planung, Italienisch-Modus für Stimme und Erkennung
+  tools/italian_deck.py Karteikasten Italienisch–Deutsch–Rumänisch (Karten, Themen, Regelkarten)
 tests/               Unit-Tests ohne API-Aufrufe
 ```
 
@@ -154,11 +157,12 @@ Beispiele:
 - „Hey Jarvis, zeig mir ungelesene Mails von Schmidt.“ -> „Lies m2 vor.“ -> „Antworte, dass Dienstag passt.“
 - „Hey Jarvis, schau dir das Dokument an, das ich in die Kamera halte. Was fehlt darin?“
 - „Hey Jarvis, wie würdest du meine Woche priorisieren?“
+- „Hey Jarvis, lass uns Italienisch üben.“ -> „Nur Wiederholung.“ / „Thema Büro.“ / „Was heißt Lieferschein auf Italienisch?“
 
 ## Daten und Datenschutz
 
 - Wake-Word-Erkennung läuft komplett lokal; erst nach „Hey Jarvis“ geht Audio an Azure.
-- Lokale Daten in `~/.sprachassistent/`: `lists.json`, `tasks.json` (nur ohne Microsoft 365), `ms_token_cache.json`.
+- Lokale Daten in `~/.sprachassistent/`: `lists.json`, `tasks.json` (nur ohne Microsoft 365), `italienisch.json` (Lernstand), `ms_token_cache.json`.
 - Webcam-Bilder werden nur auf Aufforderung aufgenommen und an die Claude-API gesendet, nicht gespeichert.
 - Der Gesprächsverlauf wird nur im Speicher gehalten und endet mit dem Schließen der App.
 

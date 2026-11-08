@@ -9,7 +9,7 @@ from typing import Callable
 
 from .agent.agent import Agent
 from .config import Settings
-from .tools import computer, documents, files, lists, m365, memory, reminders, tasks, webcam
+from .tools import computer, documents, files, italian, lists, m365, memory, reminders, tasks, webcam
 from .tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -57,7 +57,11 @@ class Assistant:
         registry.register_all(memory.build_tools(self.memory))
         self.reminders = reminders.Reminders(settings.data_dir, settings.timezone)
         registry.register_all(reminders.build_tools(self.reminders))
-        self.features += ["Listen", "Dateien (" + ", ".join(roots) + ")", "Programme", "Bildschirm", "Web-Recherche", "Gedächtnis", "Erinnerungen"]
+        # Italienisch-Trainer; Stimme und Erkennung werden erst unten angelegt, daher über Rückgriffe verbunden
+        self.italian = italian.ItalianTrainer(settings.data_dir)
+        self.italian_mode = italian.ItalianMode(lambda: getattr(self, "speech", None), lambda: getattr(self, "tts", None))
+        registry.register_all(italian.build_tools(self.italian, self.italian_mode))
+        self.features += ["Listen", "Dateien (" + ", ".join(roots) + ")", "Programme", "Bildschirm", "Web-Recherche", "Gedächtnis", "Erinnerungen", "Italienisch-Trainer"]
 
         if settings.webcam_enabled and webcam.available():
             registry.register_all(webcam.build_tools(settings.webcam_index, snapshot_provider))
@@ -128,7 +132,7 @@ class Assistant:
     def _register_language_tool(self) -> None:
         from .tools.base import Tool, schema
 
-        names = {"de-DE": "Deutsch", "ro-RO": "Rumänisch", "en-US": "Englisch"}
+        names = {"de-DE": "Deutsch", "ro-RO": "Rumänisch", "en-US": "Englisch", "it-IT": "Italienisch"}
 
         def switch(language: str) -> str:
             if language not in names:
@@ -145,8 +149,9 @@ class Assistant:
         self.registry.register(Tool(
             name="speech_set_language",
             description=(
-                "Stellt die Spracherkennung fest auf eine Sprache um (de-DE, ro-RO, en-US). Nutze das, wenn der Nutzer "
-                "sagt „sprich rumänisch“, „auf Deutsch weiter“ o. Ä. Eine einzelne Sprache wird deutlich zuverlässiger erkannt."
+                "Stellt die Spracherkennung fest auf eine Sprache um (de-DE, ro-RO, en-US, it-IT). Nutze das, wenn der Nutzer "
+                "sagt „sprich rumänisch“, „auf Deutsch weiter“ o. Ä. Eine einzelne Sprache wird deutlich zuverlässiger erkannt. "
+                "Für die Italienisch-Lektion stattdessen italienisch_modus verwenden (vorübergehend, mit Rückbau)."
             ),
             input_schema=schema({"language": {"type": "string", "enum": list(names)}}, ["language"]),
             handler=switch,
