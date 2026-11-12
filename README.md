@@ -25,7 +25,8 @@ Er übernimmt Arbeiten selbstständig, denkt mit und gibt Ratschläge:
 - **Stimme**: Azure (im Azure-Konto enthalten) oder **ElevenLabs** für echte Charakterstimmen; Stimmenliste kommt aus dem eigenen ElevenLabs-Konto
 - **Stimmen-Palette (Azure)**: viele Stimmen, Charaktere (Monster, Roboter, Kind …), Deutsch, Rumänisch, Englisch
 - **Erstellen**: Word-Dokumente, Excel-Tabellen und PowerPoint-Präsentationen als fertige Dateien
-- **KI-Modelle**: Opus 5, Sonnet 5 oder Haiku 4.5 wählbar, Denktiefe einstellbar, Zweitmeinung per Werkzeug
+- **Agenten-Team**: Jarvis führt das Gespräch (Sonnet 5.5) und verteilt die Arbeit an Fachagenten mit eigener Werkzeugliste: Wissen, Projekt, Büro, Dateien, Recherche, Prüfer (Opus 5.5), Hintergrund (Haiku 5.5). Eindeutige Aufträge gehen ohne Umweg direkt an die Rolle, unabhängige Aufträge laufen gleichzeitig
+- **Sparsam**: System-Text und Werkzeuge je Gespräch eingefroren und eine Stunde gecacht, Verlauf wird bei Pause oder Umfang ins Tagebuch zusammengefasst, lesende Werkzeuge laufen parallel; „Was hast du heute verbraucht?“ liest das Verbrauchsprotokoll
 - **Mehrsprachig**: versteht Deutsch, Rumänisch und Englisch und antwortet in der gesprochenen Sprache
 
 Technik: Claude (Anthropic API) als Agent mit Werkzeugen und integrierter Websuche, openWakeWord
@@ -49,8 +50,10 @@ Jarvis.bat           Windows: Start ohne Konsolenfenster
 Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erhalten
   assistant.py       Verdrahtung Einstellungen -> Werkzeuge -> Agent -> Sprache
   config.py          Einstellungen aus .env / Umgebungsvariablen
-  agent/agent.py     Claude-Werkzeugschleife (eigene Werkzeuge + web_search/web_fetch)
-  agent/prompts.py   Persona und Arbeitsregeln
+  agent/agent.py     Claude-Werkzeugschleife: Cache, Zeitstempel, parallele Werkzeuge, Zusammenfassung, Verbrauch
+  agent/roles.py     Rollen (Modell, Effort, Werkzeugliste), ask_agent, Ausführung je Rolle ohne Verlauf
+  agent/router.py    Verteilung: Regeln ohne Modell, bei Mehrdeutigkeit Haiku
+  agent/prompts.py   Persona des Dialogs, System-Texte der Rollen, Zusammenfassungs-Prompt
   audio/io.py        Aufnahme/Wiedergabe (16 kHz mono)
   audio/wakeword.py  „Hey Jarvis“-Erkennung, Aufnahme bis zur Sprechpause
   speech/azure.py    Azure Speech REST (Erkennung und Standardstimmen)
@@ -58,7 +61,8 @@ Aktualisieren.bat    Windows: neueste Version von GitHub holen, .env bleibt erha
   tools/m365.py      To Do, Mail, Kalender, Teams-Transkripte über Graph (Kurz-IDs t1/m1/mt1)
   tools/teams.py     WebVTT-Transkript -> „Sprecher: Text“
   tools/webcam.py    Schnappschuss als Bild für Claude
-  tools/memory.py    Dauerhaftes Gedächtnis (JSON)
+  tools/memory.py    Dauerhaftes Gedächtnis (JSON) und Tagebuch (Markdown je Tag)
+  tools/verbrauch.py Verbrauchsprotokoll auswerten (Tokens, Cache-Anteil, Kosten je Rolle)
   tools/reminders.py Erinnerungen mit Zeit (JSON), Scheduler in webapp.py
   presence.py        Präsenz per Webcam (lokale Gesichtserkennung, Ereignisse)
   ambient.py         Mithör-Modus: Protokoll, Extraktion, Sitzungs-Review
@@ -97,7 +101,9 @@ Beim ersten Start lädt openWakeWord die Modelldateien (wenige MB) herunter.
 | Variable | Pflicht | Bedeutung |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | ja | Claude-API-Schlüssel |
-| `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | nein | Standard `claude-opus-5`, `medium` |
+| `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | nein | Dialog, Projekt, Büro, Recherche: Standard `claude-sonnet-5-5`, `low` |
+| `WORKER_MODEL`, `EXPERT_MODEL` | nein | Wissen, Dateien, Hintergrund, Verteilung: `claude-haiku-5-5`; Prüfer: `claude-opus-5-5` |
+| `PARALLEL_TOOLS`, `HISTORY_COMPACT_TOKENS`, `HISTORY_IDLE_MINUTES` | nein | Standard `true`, `40000`, `30` (siehe docs/AGENTEN_PLAN.md) |
 | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | für Sprache | Ohne diese Werte nur Texteingabe |
 | `PROACTIVE_SPEECH` | nein | Erinnerungen und Termine vorlesen (`false` = nur anzeigen, unterbricht nie) |
 | `SPEECH_LANGUAGE`, `TTS_VOICE` | nein | Standard `de-DE`, `de-DE-KatjaNeural` |
@@ -158,9 +164,9 @@ Beispiele:
 ## Daten und Datenschutz
 
 - Wake-Word-Erkennung läuft komplett lokal; erst nach „Hey Jarvis“ geht Audio an Azure.
-- Lokale Daten in `~/.sprachassistent/`: `lists.json`, `tasks.json` (nur ohne Microsoft 365), `ms_token_cache.json`.
+- Lokale Daten in `~/.sprachassistent/`: `lists.json`, `tasks.json` (nur ohne Microsoft 365), `memory.json`, `tagebuch/` (Zusammenfassungen je Tag), `verbrauch.jsonl` (Token-Protokoll), `ms_token_cache.json`.
 - Webcam-Bilder werden nur auf Aufforderung aufgenommen und an die Claude-API gesendet, nicht gespeichert.
-- Der Gesprächsverlauf wird nur im Speicher gehalten und endet mit dem Schließen der App.
+- Der Gesprächsverlauf wird im Speicher gehalten; bei längerer Pause, großem Umfang und beim Beenden wird er zu wenigen Zeilen zusammengefasst und ins Tagebuch geschrieben, damit beim nächsten Start nichts fehlt.
 
 ## Tests
 

@@ -1,4 +1,4 @@
-"""Verdrahtung: Einstellungen -> Werkzeuge -> Agent -> Sprache."""
+"""Verdrahtung: Einstellungen -> Werkzeuge -> Rollen -> Dialog-Agent -> Sprache."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Callable
 
 from .agent.agent import Agent
+from .agent.roles import ROLES, RoleRunner, matches
+from .agent.router import Router
 from .config import Settings
-from .tools import computer, documents, files, lists, m365, memory, reminders, tasks, webcam
-from .tools.base import ToolRegistry
+from .tools import computer, documents, files, lists, m365, memory, reminders, tasks, verbrauch, webcam
+from .tools.base import Tool, ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -57,15 +59,23 @@ class Assistant:
         registry.register_all(memory.build_tools(self.memory))
         self.reminders = reminders.Reminders(settings.data_dir, settings.timezone)
         registry.register_all(reminders.build_tools(self.reminders))
+        registry.register_all(verbrauch.build_tools(settings.data_dir / "verbrauch.jsonl"))
         self.features += ["Listen", "Dateien (" + ", ".join(roots) + ")", "Programme", "Bildschirm", "Web-Recherche", "Gedächtnis", "Erinnerungen"]
+        self.features.append("Dokumente (Word, Excel, PowerPoint)")
 
         if settings.webcam_enabled and webcam.available():
             registry.register_all(webcam.build_tools(settings.webcam_index, snapshot_provider))
             self.features.append("Webcam")
 
-        self.registry = registry
-        self.agent = Agent(settings, registry, on_status, memory_summary=self.memory.summary)
-        self._register_ask_model()
+        self.registry = registry  # alle Werkzeuge; jede Rolle bekommt ihren Ausschnitt
+        self.runner = RoleRunner(settings, registry, on_status=on_status)
+        self.router = Router(self.runner.classify)
+        self._register(self.runner.ask_tool(lambda: self.agent.recent_context()))
+        self.agent = Agent(
+            settings, self.runner.registry_for("dialog"), on_status, client=self.runner.client,
+            memory_summary=self.memory.summary, label="dialog", on_compact=self.memory.tagebuch,
+        )
+        self.features.append("Agenten-Team (" + ", ".join(ROLES[k].title for k in ROLES if k != "dialog") + ")")
 
         self.speech = None
         self.tts = None  # Stimme; Azure oder ElevenLabs
@@ -85,6 +95,16 @@ class Assistant:
         else:
             self.features.append("nur Text")
 
+    def _register(self, tool: Tool) -> None:
+        """Werkzeug nachträglich aufnehmen: in die Gesamtliste und in die Rollen, zu denen es gehört.
+
+        Nur vor dem ersten Gespräch sinnvoll: Die Werkzeugliste eines laufenden Gesprächs bleibt eingefroren.
+        """
+        self.registry.register(tool)
+        for key, sub in list(self.runner._registries.items()):
+            if matches(ROLES[key], tool.name) and sub.get(tool.name) is None:
+                sub.register(tool)
+
     def _build_tts(self):  # noqa: ANN202
         """Stimme wählen: ElevenLabs, wenn eingerichtet, sonst Azure."""
         s = self.settings
@@ -103,30 +123,8 @@ class Assistant:
         if self.speech is not None:
             self.tts = self._build_tts()
 
-    def _register_ask_model(self) -> None:
-        from .agent.agent import MODELS
-        from .tools.base import Tool, schema
-
-        self.registry.register(Tool(
-            name="ask_model",
-            description=(
-                "Holt eine Zweitmeinung oder tiefe Analyse von einem anderen Claude-Modell ohne Werkzeuge, z. B. Opus 5 mit "
-                "hoher Denktiefe für schwierige Fach-, Rechen- oder Entscheidungsfragen. Die Frage vollständig und mit Kontext stellen."
-            ),
-            input_schema=schema(
-                {
-                    "model": {"type": "string", "enum": list(MODELS), "description": "Standard: claude-opus-5"},
-                    "question": {"type": "string"},
-                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "Standard: high"},
-                },
-                ["question"],
-            ),
-            handler=lambda question, model="claude-opus-5", effort="high": self.agent.ask(model, question, effort),
-        ))
-        self.features.append("Dokumente (Word, Excel, PowerPoint)")
-
     def _register_language_tool(self) -> None:
-        from .tools.base import Tool, schema
+        from .tools.base import schema
 
         names = {"de-DE": "Deutsch", "ro-RO": "Rumänisch", "en-US": "Englisch"}
 
@@ -142,7 +140,7 @@ class Assistant:
             update_env_file(Path(self.settings.env_file_in_use() or ".env"), {"SPEECH_LANGUAGES": language})
             return f"Erkennung auf {names[language]} umgestellt. Ich antworte ab jetzt auf {names[language]}."
 
-        self.registry.register(Tool(
+        self._register(Tool(
             name="speech_set_language",
             description=(
                 "Stellt die Spracherkennung fest auf eine Sprache um (de-DE, ro-RO, en-US). Nutze das, wenn der Nutzer "
@@ -154,9 +152,9 @@ class Assistant:
 
     def register_ambient(self, recorder) -> None:  # noqa: ANN001
         """Werkzeug, mit dem der Agent das heutige Gesprächsprotokoll lesen kann."""
-        from .tools.base import Tool, schema
+        from .tools.base import schema
 
-        self.registry.register(Tool(
+        self._register(Tool(
             name="ambient_transcript",
             description=(
                 "Liest das heutige Gesprächsprotokoll des Mithör-Modus (was der Nutzer heute in Gesprächen und Sitzungen "
@@ -164,6 +162,7 @@ class Assistant:
             ),
             input_schema=schema({"max_chars": {"type": "integer", "description": "Standard 20000"}}),
             handler=lambda max_chars=20000: recorder.transcript_today(max_chars),
+            parallel_safe=True,
         ))
 
     @property
@@ -176,7 +175,7 @@ class Assistant:
         if not text:
             return ""
         if addressed:
-            return self.agent.run(text)
+            return self._dispatch(text)
         gate = (
             f"{text}\n\n[Hinweis: Diese Äußerung wurde ohne Wake-Word im Nachfrage-Fenster aufgenommen. "
             "Antworte nur, wenn sie klar an dich gerichtet ist. Handelt es sich um ein Gespräch mit jemand anderem, "
@@ -184,6 +183,17 @@ class Assistant:
         )
         answer = self.agent.run(gate)
         return self._without_marker(answer)
+
+    def _dispatch(self, text: str) -> str:
+        """Eindeutige Aufträge gehen direkt an die Fachrolle (eine Runde gespart); der Dialog merkt sich die Runde."""
+        router: Router | None = getattr(self, "router", None)
+        role = router.route(text) if router is not None else None
+        if role is None:
+            return self.agent.run(text)
+        log.info("Verteilt an %s: %s", role, text[:80])
+        answer = self.runner.run(role, text, kontext=self.agent.recent_context())
+        self.agent.note_exchange(text, answer)
+        return answer
 
     @staticmethod
     def _is_marker(answer: str) -> bool:
@@ -205,14 +215,14 @@ class Assistant:
         return answer
 
     def handle_event(self, description: str, jpeg: bytes | None = None) -> str:
-        """Proaktives Ereignis (Erinnerung, Termin, Präsenz) durch den Agenten formulieren lassen."""
+        """Proaktives Ereignis (Erinnerung, Termin, Präsenz) von der Hintergrund-Rolle formulieren lassen."""
         import base64
 
         content: list[dict] = []
         if jpeg:
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(jpeg).decode()}})
         content.append({"type": "text", "text": f"[Systemereignis, nicht vom Nutzer gesprochen] {description} Formuliere die gesprochene Meldung an den Nutzer, ein bis zwei Sätze."})
-        return self.agent.run(content)
+        return self.runner.run("hintergrund", description, content=content)
 
     def transcribe(self, wavs: list[bytes] | bytes) -> str:
         """Transkribiert ein oder mehrere Teilstücke und fügt die Texte zusammen."""

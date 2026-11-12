@@ -22,10 +22,16 @@ class Settings(BaseSettings):
 
     # Claude
     anthropic_api_key: str | None = None  # None -> SDK-Standardauflösung (ANTHROPIC_API_KEY, ant auth login)
-    assistant_model: str = "claude-opus-5"
-    assistant_effort: str = "low"  # Sprachdialog: kurze Wartezeit; für schwere Fragen nutzt Jarvis ask_model
-    ambient_model: str | None = None  # Modell für den stillen Mithör-Helfer; leer = wie assistant_model
+    # Drei Modellklassen (agent/roles.py): Dialog und Fachrollen, günstige Arbeiter, Prüfer für schwere Fragen.
+    assistant_model: str = "claude-sonnet-5-5"
+    assistant_effort: str = "low"  # Sprachdialog: kurze Wartezeit; schwere Fragen gehen an den Prüfer (ask_agent)
+    worker_model: str = "claude-haiku-5-5"  # Wissen suchen, Dateien, Hintergrundmeldungen, Verteilung, Zusammenfassen
+    expert_model: str = "claude-opus-5-5"  # Prüfer: Einwände, Normen, Rechnen, Entscheidungen
+    ambient_model: str | None = None  # Modell für den stillen Mithör-Helfer; leer = worker_model
     max_tool_rounds: int = 30
+    parallel_tools: bool = True  # lesende Werkzeuge und parallel-sichere Rollen gleichzeitig ausführen
+    history_compact_tokens: int = 40000  # ab dieser Verlaufsgröße wird zusammengefasst (Tagebuch) und neu begonnen
+    history_idle_minutes: int = 30  # nach so langer Pause ebenfalls
 
     # Azure Speech
     azure_speech_key: str | None = None
@@ -106,6 +112,10 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return Path(value).expanduser() if value.strip() else None
         return value
+
+    @property
+    def ambient_model_effective(self) -> str:
+        return self.ambient_model or self.worker_model
 
     @field_validator("anthropic_api_key", "azure_speech_key", "azure_speech_region", "ms_client_id", "audio_input_device", "audio_output_device", "tts_voice", "file_roots", "ambient_model", "ms_login_hint", "elevenlabs_api_key", "elevenlabs_voice_id", mode="before")
     @classmethod

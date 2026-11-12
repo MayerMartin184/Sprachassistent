@@ -686,6 +686,11 @@ class Api:
             self.listener.stop()
         if self.presence is not None:
             self.presence.stop()
+        if self.assistant is not None:
+            try:
+                self.assistant.agent.flush()  # Verlauf ins Tagebuch, damit beim nächsten Start nichts fehlt
+            except Exception:  # noqa: BLE001
+                log.exception("Tagebuch beim Beenden nicht geschrieben")
 
     def _notify(self, message: str) -> None:
         self._push("System", message)

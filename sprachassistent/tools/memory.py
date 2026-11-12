@@ -10,11 +10,36 @@ from .store import JsonStore
 
 CATEGORIES = ("absprache", "gewohnheit", "person", "vorliebe", "projekt", "sonstiges")
 MAX_PROMPT_CHARS = 7000
+TAGEBUCH_PROMPT_CHARS = 1500  # jüngste Tagebuch-Einträge im System-Prompt (heute und gestern)
 
 
 class Memory:
     def __init__(self, data_dir: Path) -> None:
         self.store = JsonStore(data_dir / "memory.json", {"next_id": 1, "items": []})
+        self.tagebuch_dir = data_dir / "tagebuch"
+
+    # --- Tagebuch: Zusammenfassungen abgeschlossener Gesprächsabschnitte ---------------
+    def tagebuch(self, text: str) -> Path:
+        """Hängt eine Zusammenfassung an das heutige Tagebuch an (eine Datei je Tag, nur anhängen)."""
+        self.tagebuch_dir.mkdir(parents=True, exist_ok=True)
+        now = datetime.now()
+        path = self.tagebuch_dir / f"{now:%Y-%m-%d}.md"
+        new = not path.exists()
+        with path.open("a", encoding="utf-8") as fh:
+            if new:
+                fh.write(f"# Tagebuch {now:%d.%m.%Y}\n")
+            fh.write(f"\n## {now:%H:%M}\n{text.strip()}\n")
+        return path
+
+    def tagebuch_recent(self, max_chars: int = TAGEBUCH_PROMPT_CHARS) -> str:
+        """Die jüngsten Einträge von heute und gestern, von hinten gekürzt."""
+        if not self.tagebuch_dir.exists():
+            return ""
+        files = sorted(self.tagebuch_dir.glob("*.md"))[-2:]
+        text = "\n".join(p.read_text(encoding="utf-8") for p in files).strip()
+        if len(text) > max_chars:
+            text = "…" + text[-max_chars:]
+        return text
 
     def save(self, text: str, category: str = "sonstiges") -> dict:
         if category not in CATEGORIES:
@@ -45,20 +70,24 @@ class Memory:
         return len(data["items"]) < before
 
     def summary(self) -> str:
-        """Kompakter Text für den System-Prompt, neueste Einträge zuerst, begrenzt."""
+        """Kompakter Text für den System-Prompt (je Gespräch eingefroren): Gedächtnis plus jüngstes Tagebuch."""
         items = sorted(self.store.load()["items"], key=lambda i: i["id"], reverse=True)
-        if not items:
-            return ""
-        lines = []
-        total = 0
-        for i in items:
-            line = f"- [{i['category']}, {i['created']}] {i['text']} (#{i['id']})"
-            total += len(line)
-            if total > MAX_PROMPT_CHARS:
-                lines.append(f"- … {len(items) - len(lines)} ältere Einträge (memory_search)")
-                break
-            lines.append(line)
-        return "Gedächtnis über den Nutzer:\n" + "\n".join(lines)
+        parts: list[str] = []
+        if items:
+            lines = []
+            total = 0
+            for i in items:
+                line = f"- [{i['category']}, {i['created']}] {i['text']} (#{i['id']})"
+                total += len(line)
+                if total > MAX_PROMPT_CHARS:
+                    lines.append(f"- … {len(items) - len(lines)} ältere Einträge (memory_search)")
+                    break
+                lines.append(line)
+            parts.append("Gedächtnis über den Nutzer:\n" + "\n".join(lines))
+        recent = self.tagebuch_recent()
+        if recent:
+            parts.append("Tagebuch (Zusammenfassungen der letzten Gespräche):\n" + recent)
+        return "\n\n".join(parts)
 
     @staticmethod
     def format(items: list[dict]) -> str:

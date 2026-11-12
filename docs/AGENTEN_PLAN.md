@@ -193,7 +193,27 @@ Alle Routinen schreiben ihr Ergebnis in eine Datei oder in To Do, nie nur in den
 | **9 Prüfer** | Einwand-Check mit Planungsregeln als fester System-Text, Varianten-Antwort | `agent/roles.py` | 3, 7 | 0,5 Tag |
 
 Reihenfolge-Prinzip: erst Verbrauch senken (1 bis 5), dann Wissen sichern (6 bis 7), dann Hintergrund (8 bis 9).
-Stufen 1, 2 und 5 ändern das Verhalten für den Nutzer nicht und können sofort umgesetzt werden.
+
+### 9.1 Stand der Umsetzung (12.11.2026)
+
+| Stufe | Stand | Wo im Code |
+|---|---|---|
+| 1 Cache | umgesetzt: System-Text und Gedächtnis-Block je Gespräch eingefroren, `ttl: 1h`; Breakpoint auf der letzten Nachricht; Datum steht in der Nutzeräußerung | `agent/agent.py` (`_system`, `_messages_for_request`, `_user_message`) |
+| 2 Verlauf | umgesetzt: Zusammenfassung durch das Arbeiter-Modell ab 40.000 Tokens, nach 30 min Pause, bei Modellwechsel und beim Beenden; Zusammenfassung ins Tagebuch `~\.sprachassistent\tagebuch\JJJJ-MM-TT.md` und als Start des neuen Gesprächs; Verbrauchsprotokoll `verbrauch.jsonl`, Werkzeug `verbrauch_heute` | `agent/agent.py` (`_maybe_compact`, `_log_usage`), `tools/memory.py`, `tools/verbrauch.py` |
+| 3 Rollen | umgesetzt: acht Rollen mit eigener Werkzeugliste, Modell und Effort; `ask_agent` für den Dialog; Hintergrund und Mithören laufen als Hintergrund-Rolle (Haiku, 11 Werkzeuge, kein Verlauf) | `agent/roles.py`, `agent/prompts.py`, `assistant.py`, `ambient.py` |
+| 4 Router | umgesetzt: Regeltabelle 5.2, bei Mehrdeutigkeit Haiku, sonst Dialog; eindeutige Aufträge gehen direkt an die Rolle, der Dialog übernimmt die Runde als Klartext | `agent/router.py`, `assistant.py` (`_dispatch`) |
+| 5 Modelle | umgesetzt: Sonnet 5.5 (Dialog, Projekt, Büro, Recherche), Haiku 5.5 (Wissen, Dateien, Hintergrund, Verteilung, Zusammenfassen), Opus 5.5 (Prüfer) | `config.py`, `agent/agent.py`, `.env.example` |
+| parallel | umgesetzt: lesende Werkzeuge und parallel-sichere Rollen (Wissen, Projekt, Recherche, Prüfer, Hintergrund) laufen gleichzeitig; Büro und Dateien nicht, weil sie Bestätigungsdialoge führen | `tools/base.py` (`parallel_safe`), `agent/agent.py` (`_execute`) |
+| 6 bis 9 | offen | |
+
+Wichtig für die Verträglichkeit mit Sonnet 5.5, Opus 5.5 und Haiku 5.5: Der Verlauf wird nur angehängt, nie in der
+Mitte geändert; System-Text und Werkzeugliste bleiben je Gespräch gleich. Sonst verfallen Cache und Denkblöcke der
+Modelle. Deshalb: Datum in der Nutzeräußerung, Gedächtnis-Block eingefroren, Kürzung nur als vollständige
+Zusammenfassung mit Neustart des Gesprächs, neue Werkzeuge nur vor dem ersten Gespräch registrieren.
+
+Was Wissen und Projekt heute können: Sie arbeiten mit den vorhandenen Datei-Werkzeugen (Index lesen, Datei lesen,
+PROJEKT.md anhängen). Die eigenen Werkzeuge `wissen_index`, `projekt_notiz` (Stufe 7) machen das robuster, ändern
+aber die Rollen nicht.
 
 ---
 
@@ -230,6 +250,6 @@ hängt an `PROJEKT.md` an, `reminder_set` für Freitag 09:00. Dialog: „Notiert
 - Mitarbeiter-Jarvis bekommt dieselben Rollen ohne Büro-Finanzen und ohne Schreibrecht in `10_Standards`.
 
 **Nicht geprüft**
-- Tatsächlicher Token-Verbrauch heute (kein Protokoll vorhanden; Stufe 2 liefert es).
-- Ob die Werkzeugschleife mit Sonnet 5.5 und Haiku 5.5 in allen 54 Werkzeugen identisch läuft (Tests in Stufe 5).
+- Tatsächlicher Token-Verbrauch vor der Umstellung (kein Protokoll vorhanden; ab jetzt schreibt `verbrauch.jsonl`).
+- Lauf gegen die echte API mit Sonnet 5.5, Haiku 5.5 und Opus 5.5 (die Tests arbeiten mit einem Fake-Client). Erster Praxistag: `verbrauch_heute` abfragen und den Cache-Anteil je Rolle prüfen, Ziel über 80 Prozent im Dialog.
 - Inhalt und Stand der Ordner auf X: (kein Zugriff aus dieser Sitzung).

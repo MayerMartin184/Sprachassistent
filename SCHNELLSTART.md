@@ -143,8 +143,10 @@ https://microsoft.com/devicelogin an.
 
 ```
 ANTHROPIC_API_KEY=sk-ant-api03-Abc...
-ASSISTANT_MODEL=claude-opus-5
-ASSISTANT_EFFORT=medium
+ASSISTANT_MODEL=claude-sonnet-5-5
+ASSISTANT_EFFORT=low
+WORKER_MODEL=claude-haiku-5-5
+EXPERT_MODEL=claude-opus-5-5
 AZURE_SPEECH_KEY=1a2b3c4d5e6f...
 AZURE_SPEECH_REGION=germanywestcentral
 SPEECH_LANGUAGE=de-DE

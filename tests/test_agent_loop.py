@@ -43,10 +43,15 @@ def test_tool_round_trip_and_history():
     assert agent.run("Was ist 2 plus 3?") == "Das Ergebnis ist 5."
     assert len(fake.calls) == 2
     second = fake.calls[1]["messages"]
-    assert second[-1] == {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "5"}]}
+    # Werkzeug-Ergebnis geht zurück; die letzte Nachricht trägt den Cache-Breakpoint, der Verlauf selbst nicht
+    assert second[-1] == {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "5", "cache_control": {"type": "ephemeral"}}]}
+    assert agent.history[2] == {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "5"}]}
     assert fake.calls[0]["output_config"] == {"effort": "medium"}
     assert any(t.get("type", "").startswith("web_search") for t in fake.calls[0]["tools"])
-    assert fake.calls[0]["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert fake.calls[0]["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    # Nutzeräußerung: Zeitstempel als erster Block, dann der Text
+    first = fake.calls[0]["messages"][0]["content"]
+    assert first[0]["text"].startswith("[Aktuell: ") and first[1]["text"] == "Was ist 2 plus 3?"
     # Verlauf: user, assistant(tool_use), user(result), assistant(final)
     assert [m["role"] for m in agent.history] == ["user", "assistant", "user", "assistant"]
 

@@ -395,7 +395,7 @@ const ui = (() => {
     $("s_model").innerHTML = ""; st.models.forEach(m => $("s_model").append(new Option(m.name, m.id))); $("s_model").value = st.assistant_model;
     $("s_effort").value = st.assistant_effort;
     $("s_speed").value = speedFromFields();
-    $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Hauptmodell", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
+    $("s_amodel").innerHTML = ""; $("s_amodel").append(new Option("wie Arbeiter-Modell (günstig)", "")); st.models.forEach(m => $("s_amodel").append(new Option(m.name, m.id))); $("s_amodel").value = st.ambient_model || "";
     [...$("s_langs").querySelectorAll("input")].forEach(cb => cb.checked = st.languages.includes(cb.value));
     $("s_att").value = st.attention_seconds; showVal("s_att","v_att", v => v + " s");
     $("s_roots").value = st.file_roots || "";

@@ -94,10 +94,9 @@ class AmbientRecorder:
 
     # --- Auswertung -------------------------------------------------------------
     def _agent(self, prompt: str) -> Agent:
-        return Agent(
-            self.s, self.assistant.registry, lambda _m: None,
-            memory_summary=self.assistant.memory.summary, system_text=prompt.format(name=self.s.assistant_name),
-            model=self.s.ambient_model, effort="low",
+        """Stiller Helfer als Hintergrund-Rolle: wenige Werkzeuge, günstiges Modell, kein Verlauf."""
+        return self.assistant.runner.agent(
+            "hintergrund", system_text=prompt.format(name=self.s.assistant_name), model=self.s.ambient_model_effective,
         )
 
     def _ticker(self) -> None:
